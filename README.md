@@ -109,6 +109,7 @@ conditions, which allows per-host configuration.
 Syntax:
 
 ```zig
+// @include(file)
 // @if(condition)
 // @elif(condition)
 // @else
