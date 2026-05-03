@@ -105,7 +105,7 @@ pub fn render(self: *Self, color: u32) void {
             return;
         }
         break :blk
-            if (self.window.output != null and self.window.output.?.current_layout() != .float and !self.window.floating) .{
+            if (self.window.managed_by_layout()) .{
                 self.window.width + 2*config.border.width,
                 self.window.height + 2*config.border.width,
             }

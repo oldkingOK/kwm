@@ -517,6 +517,16 @@ pub fn toggle_sticky(self: *Self) void {
 }
 
 
+// if the window is managed by any layout
+pub fn managed_by_layout(self: *const Self) bool {
+    return
+        if (self.output) |output|
+            if (output.current_layout() == .float) false
+            else !self.floating
+        else false;
+}
+
+
 pub fn is_visible(self: *Self) bool {
     if (self.output) |output| {
         return (
@@ -589,7 +599,7 @@ pub fn handle_events(self: *Self) void {
                     .ssd => self.rwm_window.useSsd(),
                 }
 
-                if (self.floating or self.output == null or self.output.?.current_layout() == .float) {
+                if (!self.managed_by_layout()) {
                     if (self.width > 0 and self.height > 0) {
                         self.center();
                     } else {
@@ -779,7 +789,7 @@ pub fn manage(self: *Self) void {
             }
         }
         if (self.swallowing_border != null) {
-            if (self.output != null and self.output.?.current_layout() != .float and !self.floating) {
+            if (self.managed_by_layout()) {
                 width = @max(width - 2*config.border.width, self.min_width);
                 height = @max(height - 2*config.border.width, self.min_height);
             }
@@ -822,7 +832,7 @@ pub fn render(self: *Self) void {
 
     if (self.swallowing_border) |*border| {
         border.render(config.border.color.swallowing);
-        if (self.output != null and self.output.?.current_layout() != .float and !self.floating) {
+        if (self.managed_by_layout()) {
             offset_x += config.border.width;
             offset_y += config.border.width;
         }
