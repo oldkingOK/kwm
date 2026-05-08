@@ -480,8 +480,9 @@ fn wl_output_listener(wl_output: *wl.Output, event: wl.Output.Event, output: *Se
 
             if (context.output_states.fetchRemove(name)) |kv| {
                 log.debug("<{*}> restore state: {any}", .{ output, kv.value });
-                output.sync_state(&kv.value);
+                output.sync_state(kv.value);
                 utils.allocator.free(kv.key);
+                utils.allocator.destroy(kv.value);
 
                 context.rwm.manageDirty();
             }
