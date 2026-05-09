@@ -771,26 +771,26 @@ fn handle_actions(self: *Self) void {
                 if (context.current_output) |output| {
                     switch (output.current_layout()) {
                         .tile => |tile| {
-                            const val = switch (data.change) {
-                                .set => |set| set,
+                            const mfact = switch (data.change) {
+                                .set => |mfact| mfact,
                                 .step => |step| tile.mfact + step,
                             };
-                            tile.mfact = @min(1, @max(0, val));
+                            tile.mfact = @min(1, @max(0, mfact));
                         },
                         .deck => |deck| {
-                            const val = switch (data.change) {
-                                .set => |set| set,
+                            const mfact = switch (data.change) {
+                                .set => |mfact| mfact,
                                 .step => |step| deck.mfact + step,
                             };
-                            deck.mfact = @min(1, @max(0, val));
+                            deck.mfact = @min(1, @max(0, mfact));
                         },
                         .scroller => {
                             if (context.focus_top_in(output, false)) |window| {
-                                const val = switch (data.change) {
-                                    .set => |set| set,
+                                const mfact = switch (data.change) {
+                                    .set => |mfact| mfact,
                                     .step => |step| window.scroller_mfact + step,
                                 };
-                                window.scroller_mfact = @min(1, @max(0, val));
+                                window.scroller_mfact = @min(1, @max(0, mfact));
                             }
                         },
                         else => {},
