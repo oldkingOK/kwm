@@ -1,10 +1,10 @@
 const Self = @This();
 
 const std = @import("std");
-const log = std.log.scoped(.buffer);
 const mem = std.mem;
 const posix = std.posix;
 const linux = std.os.linux;
+const log = std.log.scoped(.buffer);
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;

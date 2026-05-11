@@ -11,17 +11,17 @@ const Context = @import("../context.zig");
 const ctx = Context.get();
 
 
-pub fn to_utf8(allocator: mem.Allocator, bytes: []const u8) ![]u32 {
+pub fn to_utf8(gpa: mem.Allocator, bytes: []const u8) ![]u32 {
     const utf8 = try unicode.Utf8View.init(bytes);
     var iter = utf8.iterator();
 
-    var runes = try std.ArrayList(u32).initCapacity(allocator, bytes.len);
+    var runes = try std.ArrayList(u32).initCapacity(gpa, bytes.len);
     var i: usize = 0;
     while (iter.nextCodepoint()) |rune| : (i += 1) {
         runes.appendAssumeCapacity(rune);
     }
 
-    return try runes.toOwnedSlice(allocator);
+    return try runes.toOwnedSlice(gpa);
 }
 
 

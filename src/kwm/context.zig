@@ -1222,25 +1222,28 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
 }
 
 
-fn try_open_fifo(fifo: []const u8) !posix.fd_t {
-    var expanded_fifo = try utils.expand_env_str(ctx.gpa, fifo, &ctx.env);
-    defer expanded_fifo.deinit(ctx.gpa);
+fn try_open_fifo(path: []const u8) !posix.fd_t {
+    var expanded_path = try utils.expand_env_str(
+        .{ .gpa = ctx.gpa, .env = &ctx.env },
+        path
+    );
+    defer expanded_path.deinit(ctx.gpa);
 
-    log.debug("try open fifo file `{s}`", .{ expanded_fifo.items });
+    log.debug("try open fifo file `{s}`", .{ expanded_path.items });
 
-    const fd = posix.open(expanded_fifo.items, .{ .ACCMODE = .RDWR, .NONBLOCK = true }, 0) catch |err| {
-        log.warn("open `{s}` failed: {}", .{ fifo, err });
+    const fd = posix.open(expanded_path.items, .{ .ACCMODE = .RDWR, .NONBLOCK = true }, 0) catch |err| {
+        log.warn("open `{s}` failed: {}", .{ path, err });
         return error.OpenFailed;
     };
     errdefer posix.close(fd);
 
     const stat = posix.fstat(fd) catch |err| {
-        log.warn("stat `{s}` failed: {}", .{ fifo, err });
+        log.warn("stat `{s}` failed: {}", .{ path, err });
         return error.StatFailed;
     };
 
     if (stat.mode & posix.S.IFMT == 0) {
-        log.warn("`{s}` is not a fifo file", .{ fifo });
+        log.warn("`{s}` is not a fifo file", .{ path });
         return error.NotFifo;
     }
     return fd;

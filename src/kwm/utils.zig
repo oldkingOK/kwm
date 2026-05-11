@@ -153,7 +153,13 @@ pub fn set_user_data(comptime T: type, object: *T, comptime DataT: type, data: D
 }
 
 
-pub fn expand_env_str(al: std.mem.Allocator, str: []const u8, env: *const process.EnvMap) !std.ArrayList(u8) {
+pub fn expand_env_str(
+    ctx: struct {
+        gpa: mem.Allocator,
+        env: *const process.EnvMap
+    },
+    str: []const u8
+) !std.ArrayList(u8) {
     var result: std.ArrayList(u8) = .empty;
 
     var i: usize = 0;
@@ -172,9 +178,9 @@ pub fn expand_env_str(al: std.mem.Allocator, str: []const u8, env: *const proces
                 match = it.next();
             }
 
-            part = env.get(match.?.slice[2..match.?.slice.len-1]) orelse match.?.slice;
+            part = ctx.env.get(match.?.slice[2..match.?.slice.len-1]) orelse match.?.slice;
         } else unreachable;
-        try result.appendSlice(al, part);
+        try result.appendSlice(ctx.gpa, part);
     }
 
     return result;
