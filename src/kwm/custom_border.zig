@@ -8,8 +8,6 @@ const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const river = wayland.client.river;
 
-const Config = @import("config");
-
 const utils = @import("utils.zig");
 const Context = @import("context.zig");
 const Window = @import("window.zig");
@@ -92,7 +90,6 @@ pub fn render(self: *Self, color: u32) void {
 
     log.debug("<{*}> rendering", .{ self });
 
-    const config = Config.get();
     const width, const height = blk: {
         if (self.window.maximize) {
             if (self.window.output) |output| {
@@ -105,16 +102,16 @@ pub fn render(self: *Self, color: u32) void {
         }
         break :blk
             if (self.window.managed_by_layout()) .{
-                self.window.width + 2*config.border.width,
-                self.window.height + 2*config.border.width,
+                self.window.width + 2*ctx.cfg.border.width,
+                self.window.height + 2*ctx.cfg.border.width,
             }
             else .{
-                self.window.width + 4*config.border.width,
-                self.window.height + 4*config.border.width,
+                self.window.width + 4*ctx.cfg.border.width,
+                self.window.height + 4*ctx.cfg.border.width,
             };
     };
 
-    self.rwm_decoration.setOffset(-2*config.border.width, -2*config.border.width);
+    self.rwm_decoration.setOffset(-2*ctx.cfg.border.width, -2*ctx.cfg.border.width);
     self.rwm_decoration.syncNextCommit();
 
     const buffer = ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(0, 0, 0, 0) catch |err| {
@@ -127,10 +124,10 @@ pub fn render(self: *Self, color: u32) void {
     self.wl_surface.damage(0, 0, width, height);
     self.wp_viewport.setDestination(width, height);
 
-    self.top.render(0, 0, width, config.border.width, color);
-    self.bottom.render(0, height-config.border.width, width, config.border.width, color);
-    self.left.render(0, 0, config.border.width, height, color);
-    self.right.render(width-config.border.width, 0, config.border.width, height, color);
+    self.top.render(0, 0, width, ctx.cfg.border.width, color);
+    self.bottom.render(0, height-ctx.cfg.border.width, width, ctx.cfg.border.width, color);
+    self.left.render(0, 0, ctx.cfg.border.width, height, color);
+    self.right.render(width-ctx.cfg.border.width, 0, ctx.cfg.border.width, height, color);
 
     self.wl_surface.commit();
 }

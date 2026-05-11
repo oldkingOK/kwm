@@ -93,8 +93,6 @@ pub fn main() !void {
         log.err("format config path failed: {}", .{ err });
         return err;
     };
-    Config.init(&allocator, config_path);
-    defer Config.deinit();
 
     const display = try wl.Display.connect(null);
     defer display.disconnect();
@@ -120,6 +118,7 @@ pub fn main() !void {
 
         try kwm.init(
             allocator,
+            config_path,
             registry,
             wl_compositor,
             wl_subcompositor,

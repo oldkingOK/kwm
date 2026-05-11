@@ -16,7 +16,7 @@ const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const river = wayland.client.river;
 
-const Config = @import("config");
+const config = @import("config");
 
 const utils = @import("utils.zig");
 const types = @import("types.zig");
@@ -32,6 +32,8 @@ var mode_buffer: [16]u8 = undefined;
 
 
 gpa: mem.Allocator,
+config_path: []const u8,
+cfg: config.Config = undefined,
 
 wl_registry: *wl.Registry,
 wl_compositor: *wl.Compositor,
@@ -83,6 +85,7 @@ pub inline fn check_init() void {
 
 pub fn init(
     gpa: mem.Allocator,
+    config_path: []const u8,
     wl_registry: *wl.Registry,
     wl_compositor: *wl.Compositor,
     wl_subcompositor: *wl.Subcompositor,
@@ -106,6 +109,7 @@ pub fn init(
 
     ctx = .{
         .gpa = gpa,
+        .config_path = config_path,
         .wl_registry = wl_registry,
         .wl_compositor = wl_compositor,
         .wl_subcompositor = wl_subcompositor,
@@ -120,7 +124,7 @@ pub fn init(
         .key_repeat = undefined,
         .terminal_windows = .init(gpa),
         .output_states = .init(gpa),
-        .mode = fmt.bufPrint(&mode_buffer, "{s}", .{ Config.default_mode }) catch return error.ModeNameTooLong,
+        .mode = fmt.bufPrint(&mode_buffer, "{s}", .{ config.default_mode }) catch return error.ModeNameTooLong,
     };
 
     const wl_surface = try wl_compositor.createSurface();
@@ -141,6 +145,7 @@ pub fn init(
         ctx.key_repeat = null;
     };
 
+    ctx.load_config();
     ctx.init_env_map();
     ctx.run_startup_cmds();
 
@@ -223,6 +228,8 @@ pub fn deinit() void {
 
     ctx.kill_startup_process();
     ctx.startup_processes.deinit(ctx.gpa);
+
+    config.free(ctx.gpa, ctx.cfg);
 }
 
 
@@ -232,9 +239,16 @@ pub inline fn get() *Self {
 
 
 pub fn reload_config(self: *Self) void {
-    log.debug("reload config", .{});
+    log.debug("reloading config", .{});
 
-    const mask = Config.reload();
+    const mask = config.reload(
+        .{ .gpa = self.gpa },
+        &self.cfg,
+        self.config_path
+    ) catch |err| {
+        log.err("reload configuration failed: {}", .{ err });
+        return;
+    };
 
     log.debug("mask: {any}", .{ mask });
 
@@ -306,9 +320,7 @@ pub fn reload_config(self: *Self) void {
 pub fn start_listening_status(self: *Self) void {
     self.stop_listening_status();
 
-    const config = Config.get();
-
-    self.bar_status_fd = if (config.bar.status) |area|
+    self.bar_status_fd = if (self.cfg.bar.status) |area|
         switch (area.data) {
             .text => null,
             .stdin => blk: {
@@ -332,9 +344,7 @@ pub fn start_listening_status(self: *Self) void {
 
 
 pub fn stop_listening_status(self: *Self) void {
-    const config = Config.get();
-
-    if (config.bar.status) |area| {
+    if (self.cfg.bar.status) |area| {
         switch (area.data) {
             .text => {},
             .stdin => self.bar_status_fd = null,
@@ -484,10 +494,8 @@ pub fn focused_window(self: *Self) ?*Window {
 pub fn focus_iter(self: *Self, direction: types.Direction, skip: types.WindowIterSkip) void {
     log.debug("focus iter: {s}", .{ @tagName(direction) });
 
-    const config = Config.get();
-
     if (self.focused_window()) |window| {
-        const wrap_around = !config.disable_wrap_around_for_scroller or window.output.?.current_layout() != .scroller;
+        const wrap_around = !self.cfg.disable_wrap_around_for_scroller or window.output.?.current_layout() != .scroller;
 
         var win = window;
         while (true) {
@@ -609,13 +617,11 @@ pub inline fn focus_exclusive(self: *Self) bool {
 pub fn swap(self: *Self, direction: types.Direction) void {
     log.debug("swap window: {s}", .{ @tagName(direction) });
 
-    const config = Config.get();
-
     if (self.focused_window()) |window| {
         if (window.floating) return;
         if (window.fullscreen == .output) return;
 
-        const wrap_around = !config.disable_wrap_around_for_scroller or window.output.?.current_layout() != .scroller;
+        const wrap_around = !self.cfg.disable_wrap_around_for_scroller or window.output.?.current_layout() != .scroller;
 
         var win = window;
         while (true) {
@@ -824,11 +830,9 @@ pub fn spawn_child(self: *Self, argv: []const []const u8) ?process.Child {
         log.debug("spawn child process: {s}", .{ cmd });
     }
 
-    const config = Config.get();
-
     var child = process.Child.init(argv, self.gpa);
     child.env_map = &self.env;
-    child.cwd = switch (config.working_directory) {
+    child.cwd = switch (self.cfg.working_directory) {
         .none => null,
         .home => self.env.get("HOME"),
         .custom => |dir| dir,
@@ -847,8 +851,6 @@ pub fn spawn(self: *Self, argv: []const []const u8) void {
         defer self.gpa.free(cmd);
         log.debug("spawn: `{s}`", .{ cmd });
     }
-
-    const config = Config.get();
 
     const pid1 = posix.fork() catch |err| {
         log.err("fork failed: {}", .{ err });
@@ -870,7 +872,7 @@ pub fn spawn(self: *Self, argv: []const []const u8) void {
 
     const pid2 = posix.fork() catch posix.exit(1);
     if (pid2 == 0) {
-        if (switch (config.working_directory) {
+        if (switch (self.cfg.working_directory) {
             .none => null,
             .home => self.env.get("HOME"),
             .custom => |dir| dir,
@@ -910,16 +912,14 @@ fn init_env_map(self: *Self) void {
         break :blk .init(self.gpa);
     };
 
-    const config = Config.get();
-
-    for (config.env) |pair| {
+    for (self.cfg.env) |pair| {
         const key, const value = pair;
         ctx.env.put(key, value) catch |err| {
             log.warn("put (key: {s}, value: {s}) to env map failed: {}", .{ key, value, err });
         };
     }
 
-    if (config.xcursor_theme) |xcursor_theme| blk: {
+    if (self.cfg.xcursor_theme) |xcursor_theme| blk: {
         ctx.env.put("XCURSOR_THEME", xcursor_theme.name) catch |err| {
             log.warn("put XCURSOR_THEME to `{s}` failed: {}", .{ xcursor_theme.name, err });
         };
@@ -936,14 +936,21 @@ fn init_env_map(self: *Self) void {
 }
 
 
-fn run_startup_cmds(self: *Self) void {
-    const config = Config.get();
+fn load_config(self: *Self) void {
+    log.debug("loading configuration", .{});
+    self.cfg = config.load(.{ .gpa = self.gpa }, self.config_path) catch |err| blk: {
+        log.err("load configuration failed: {}, fallback to default configuration", .{ err });
+        break :blk config.default;
+    };
+}
 
-    self.startup_processes.ensureTotalCapacity(self.gpa, config.startup_cmds.len) catch |err| {
+
+fn run_startup_cmds(self: *Self) void {
+    self.startup_processes.ensureTotalCapacity(self.gpa, self.cfg.startup_cmds.len) catch |err| {
         log.err("initCapacity for startup_processes failed: {}", .{ err });
         return;
     };
-    for (config.startup_cmds) |argv| {
+    for (self.cfg.startup_cmds) |argv| {
         ctx.startup_processes.appendBounded(self.spawn_child(argv)) catch unreachable;
     }
 }
@@ -1021,8 +1028,6 @@ fn prepare_manage(self: *Self) void {
 
 
 fn prepare_render_windows(self: *Self) void {
-    const config = Config.get();
-
     const focused = self.focused_window();
 
     var it = self.windows.safeIterator(.forward);
@@ -1032,10 +1037,10 @@ fn prepare_render_windows(self: *Self) void {
         } else {
             window.set_border(
                 if (window.fullscreen == .output) 0
-                else config.border.width,
+                else self.cfg.border.width,
                 if (!self.focus_exclusive() and window == focused)
-                    config.border.color.focus
-                else config.border.color.unfocus
+                    self.cfg.border.color.focus
+                else self.cfg.border.color.unfocus
             );
         }
     }
@@ -1084,8 +1089,6 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
     const cache = struct {
         pub var mode: [16] u8 = undefined;
     };
-
-    const config = Config.get();
 
     switch (event) {
         .finished => {
@@ -1161,9 +1164,9 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
 
             context.attach_window(
                 window,
-                config.default_attach_mode.getter.get(
+                context.cfg.default_attach_mode.getter.get(
                     if (context.current_output) |output| output.current_layout()
-                    else config.default_layout,
+                    else context.cfg.default_layout,
                 ),
             );
             context.focus(window, true);
@@ -1208,7 +1211,7 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
             log.debug("session locked", .{});
 
             _ = fmt.bufPrintZ(&cache.mode, "{s}", .{ context.mode }) catch unreachable;
-            context.switch_mode(Config.lock_mode);
+            context.switch_mode(config.lock_mode);
         },
         .session_unlocked => {
             log.debug("session unlocked", .{});

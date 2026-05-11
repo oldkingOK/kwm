@@ -8,8 +8,6 @@ const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const river = wayland.client.river;
 
-const Config = @import("config");
-
 const utils = @import("utils.zig");
 const Context = @import("context.zig");
 const Output = @import("output.zig");
@@ -69,14 +67,12 @@ pub fn render(self: *Self) void {
 
     log.debug("<{*}> rendering", .{ self });
 
-    const config = Config.get();
-
     self.shell_surface.sync_next_commit();
     self.shell_surface.place(.bottom);
     self.shell_surface.set_position(self.output.x, self.output.y);
 
     const buffer = (
-        if (config.background) |color| blk: {
+        if (ctx.cfg.background) |color| blk: {
             const rgba = utils.rgba(color);
             break :blk ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(
                 rgba.r,

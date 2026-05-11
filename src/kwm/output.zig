@@ -10,7 +10,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const river = wayland.client.river;
 
-const Config = @import("config");
+const config = @import("config");
 
 const utils = @import("utils.zig");
 const Layout = @import("layout.zig");
@@ -66,14 +66,12 @@ pub fn create(
 
     defer log.debug("<{*}> created", .{ output });
 
-    const config = Config.get();
-
     output.* = .{
         .rwm_output = rwm_output,
         .rwm_layer_shell_output = rwm_layer_shell_output,
-        .layouts = .{ config.layout } ** 32,
-        .layout_tag = .{ config.default_layout } ** 32,
-        .prev_layout_tag = .{ config.default_layout } ** 32,
+        .layouts = .{ ctx.cfg.layout } ** 32,
+        .layout_tag = .{ ctx.cfg.default_layout } ** 32,
+        .prev_layout_tag = .{ ctx.cfg.default_layout } ** 32,
     };
     output.link.init();
 
@@ -147,9 +145,7 @@ pub fn sync_state(self: *Self, state: *const State) void {
 pub fn apply_rules(self: *Self) void {
     log.debug("<{*}> apply rules", .{ self });
 
-    const config = Config.get();
-
-    for (config.output_rules) |rule| {
+    for (ctx.cfg.output_rules) |rule| {
         if (rule.match(self.name)) {
             self.apply_rule(&rule);
             break;
@@ -164,11 +160,9 @@ pub inline fn exclusive_x(self: *Self) i32 {
 
 
 pub inline fn exclusive_y(self: *Self) i32 {
-    const config = Config.get();
-
     return
         if (comptime build_options.bar_enabled)
-            if (config.bar.position == .bottom or self.bar.hidden) self.y
+            if (ctx.cfg.bar.position == .bottom or self.bar.hidden) self.y
             else self.y + self.bar.height(true)
         else self.y;
 }
@@ -356,10 +350,10 @@ pub fn manage(self: *Self) void {
 }
 
 
-fn apply_rule(self: *Self, rule: *const Config.OutputRule) void {
+fn apply_rule(self: *Self, rule: *const config.OutputRule) void {
     if (rule.presentation_mode) |mode| self.set_presentation(mode);
     if (rule.layout) |layout| for (&self.layouts) |*l| {
-        l.* = Config.meta.override(l.*, layout);
+        l.* = config.meta.override(l.*, layout);
     };
     if (rule.default_layout) |default_layout| {
         self.layout_tag = .{ default_layout } ** 32;

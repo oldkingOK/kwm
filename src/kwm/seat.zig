@@ -14,7 +14,7 @@ const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const river = wayland.client.river;
 
-const Config = @import("config");
+const config = @import("config");
 
 const types = @import("types.zig");
 const binding = @import("binding.zig");
@@ -199,12 +199,10 @@ pub fn manage(self: *Self) void {
 
     defer self.pointer_position.new = false;
 
-    const config = Config.get();
-
     // TODO: https://codeberg.org/river/river/issues/1317
-    // if config.sloppy_focus is true, once pointer activity, check window_below_pointer.new,
+    // if ctx.cfg.sloppy_focus is true, once pointer activity, check window_below_pointer.new,
     // if true, focus the window below pointer and reset window_below_pointer.new to false
-    if (config.sloppy_focus and self.window_below_pointer.new and self.pointer_position.new) {
+    if (ctx.cfg.sloppy_focus and self.window_below_pointer.new and self.pointer_position.new) {
         defer self.window_below_pointer.new = false;
 
         const window = self.window_below_pointer.window.?;
@@ -255,14 +253,12 @@ pub fn try_focus(self: *Self) void {
 
     defer self.has_pointer_interaction = false;
 
-    const config = Config.get();
-
     if (ctx.focused_window()) |window| focus_window: {
         if (window.geometry_undefined) break :focus_window;
 
         defer self.previous_focused = .{ .window = window };
 
-        if (!self.has_pointer_interaction) switch (config.cursor_warp) {
+        if (!self.has_pointer_interaction) switch (ctx.cfg.cursor_warp) {
             .none => {},
             .on_output_changed => blk: {
                 switch (self.previous_focused) {
@@ -297,7 +293,7 @@ pub fn try_focus(self: *Self) void {
         if (ctx.current_output) |output| {
             defer self.previous_focused = .{ .output = output };
 
-            if (!self.has_pointer_interaction and config.cursor_warp != .none) blk: {
+            if (!self.has_pointer_interaction and ctx.cfg.cursor_warp != .none) blk: {
                 switch (self.previous_focused) {
                     .none => {},
                     .window => |w| if (w.output == output) break :blk,
@@ -328,9 +324,7 @@ pub fn append_action(self: *Self, action: binding.Action) void {
 pub fn refresh_xursor_theme(self: *Self) void {
     log.debug("<{*}> refresh xcursor theme", .{ self });
 
-    const config = Config.get();
-
-    if (config.xcursor_theme) |xcursor_theme| {
+    if (ctx.cfg.xcursor_theme) |xcursor_theme| {
         log.debug(
             "<{*}> set xcursor theme: (name: {s}, size: {})",
             .{ self, xcursor_theme.name, xcursor_theme.size }
@@ -344,10 +338,8 @@ pub fn refresh_xursor_theme(self: *Self) void {
 pub fn create_bindings(self: *Self) void {
     log.debug("<{*}> create bindings", .{ self });
 
-    const config = Config.get();
-
-    for (config.bindings.key) |key_binding| {
-        const mode = key_binding.mode orelse Config.default_mode;
+    for (ctx.cfg.bindings.key) |key_binding| {
+        const mode = key_binding.mode orelse config.default_mode;
         if (!self.xkb_bindings.contains(mode)) {
             self.xkb_bindings.put(mode, .empty) catch |err| {
                 log.err("<{*}> put a new xkb binding list failed: {}", .{ self, err });
@@ -392,8 +384,8 @@ pub fn create_bindings(self: *Self) void {
         );
     }
 
-    for (config.bindings.pointer) |pointer_binding| {
-        const mode = pointer_binding.mode orelse Config.default_mode;
+    for (ctx.cfg.bindings.pointer) |pointer_binding| {
+        const mode = pointer_binding.mode orelse config.default_mode;
         if (!self.pointer_bindings.contains(mode)) {
             self.pointer_bindings.put(mode, .empty) catch |err| {
                 log.err("<{*}> put a new pointer binding list failed: {}", .{ self, err });
@@ -470,7 +462,6 @@ fn warp_cursor(self: *Self, dest: union(enum) { window: *Window, output: *Output
         .output => |output| log.debug("<{*}> warp cursor to {*}", .{ self, output }),
     }
 
-    const config = Config.get();
     const x, const y = switch (dest) {
         .window => |window| blk: {
             if (window.output) |output| {
@@ -482,9 +473,9 @@ fn warp_cursor(self: *Self, dest: union(enum) { window: *Window, output: *Output
                 const pointer_y = self.pointer_position.y;
                 // if pointer already within the window, skip
                 if (
-                    @abs(pointer_x - abs_x) < @divFloor(window.width, 2) + config.border.width + 1
+                    @abs(pointer_x - abs_x) < @divFloor(window.width, 2) + ctx.cfg.border.width + 1
                     and
-                    @abs(pointer_y - abs_y) < @divFloor(window.height, 2) + config.border.width + 1
+                    @abs(pointer_y - abs_y) < @divFloor(window.height, 2) + ctx.cfg.border.width + 1
                 ) {
                     return;
                 }
@@ -502,8 +493,6 @@ fn warp_cursor(self: *Self, dest: union(enum) { window: *Window, output: *Output
 
 fn handle_actions(self: *Self) void {
     defer self.unhandled_actions.clearRetainingCapacity();
-
-    const config = Config.get();
 
     var i: usize = 0;
     while (i < self.unhandled_actions.items.len) : (i += 1) {
@@ -796,11 +785,11 @@ fn handle_actions(self: *Self) void {
             .modify_gap => |data| {
                 if (ctx.current_output) |output| {
                     switch (output.current_layout()) {
-                        .tile => |tile| tile.inner_gap = @max(config.border.width*2, tile.inner_gap+data.step),
-                        .grid => |grid| grid.inner_gap = @max(config.border.width*2, grid.inner_gap+data.step),
-                        .monocle => |monocle| monocle.gap = @max(config.border.width*2, monocle.gap+data.step),
-                        .deck => |deck| deck.inner_gap = @max(config.border.width*2, deck.inner_gap+data.step),
-                        .scroller => |scroller| scroller.inner_gap = @max(config.border.width*2, scroller.inner_gap+data.step),
+                        .tile => |tile| tile.inner_gap = @max(ctx.cfg.border.width*2, tile.inner_gap+data.step),
+                        .grid => |grid| grid.inner_gap = @max(ctx.cfg.border.width*2, grid.inner_gap+data.step),
+                        .monocle => |monocle| monocle.gap = @max(ctx.cfg.border.width*2, monocle.gap+data.step),
+                        .deck => |deck| deck.inner_gap = @max(ctx.cfg.border.width*2, deck.inner_gap+data.step),
+                        .scroller => |scroller| scroller.inner_gap = @max(ctx.cfg.border.width*2, scroller.inner_gap+data.step),
                         .float => {},
                     }
                 }
@@ -834,7 +823,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .toggle_auto_swallow => {
-                config.auto_swallow = !config.auto_swallow;
+                ctx.cfg.auto_swallow = !ctx.cfg.auto_swallow;
             },
 
             .reload_config => {
@@ -1096,13 +1085,13 @@ fn wl_seat_listener(wl_seat: *wl.Seat, event: wl.Seat.Event, seat: *Self) void {
             // automatically run `kwim` when receive `capabilities` event
             // since if tty switched, the `capabilities` event will be resent
             if (comptime build_options.kwim_enabled) {
-                const config_path = fs.cwd().realpathAlloc(ctx.gpa, Config.path) catch null;
+                const config_path = fs.cwd().realpathAlloc(ctx.gpa, ctx.config_path) catch null;
                 defer if (config_path) |ptr| ctx.gpa.free(ptr);
 
                 _ = ctx.spawn(&.{
                     "kwim",
                     "-c",
-                    config_path orelse Config.path,
+                    config_path orelse ctx.config_path,
                 });
             }
         }

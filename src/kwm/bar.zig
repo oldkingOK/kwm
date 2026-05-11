@@ -15,8 +15,6 @@ const pixman = @import("pixman");
 const fcft = @import("fcft");
 const mvzr = @import("mvzr");
 
-const Config = @import("config");
-
 const utils = @import("utils.zig");
 const types = @import("types.zig");
 const render_ = @import("render.zig");
@@ -56,15 +54,14 @@ pub fn init(self: *Self, output: *Output) !void {
     log.debug("<{*}> init", .{ self });
 
     const scale = 120;
-    const config = Config.get();
 
     self.* = .{
         .output = output,
         .scale = scale,
-        .hidden = !config.bar.show_default,
+        .hidden = !ctx.cfg.bar.show_default,
     };
 
-    try self.font.init(config.bar.font, scale);
+    try self.font.init(ctx.cfg.bar.font, scale);
     errdefer self.font.deinit();
 
     self.dynamic_splits = .initBuffer(&self.dynamic_splits_buffer);
@@ -91,9 +88,7 @@ pub fn deinit(self: *Self) void {
 pub inline fn reload_font(self: *Self) void {
     log.debug("<{*}> reload font", .{ self });
 
-    const config = Config.get();
-
-    self.font.reload(config.bar.font, self.scale);
+    self.font.reload(ctx.cfg.bar.font, self.scale);
 }
 
 
@@ -109,8 +104,6 @@ pub inline fn height(self: *const Self, logical: bool) i32 {
 pub fn handle_click(self: *Self, seat: *Seat) void {
     log.debug("<{*}> handle click by {*}", .{ self, seat });
 
-    const config = Config.get();
-
     const pointer_x = seat.pointer_position.x;
     const pointer_y = seat.pointer_position.y;
 
@@ -118,7 +111,7 @@ pub fn handle_click(self: *Self, seat: *Seat) void {
     if (pointer_x < self.output.x or pointer_x > self.output.x + self.output.width) {
         return;
     }
-    switch (config.bar.position) {
+    switch (ctx.cfg.bar.position) {
         .top => {
             if (pointer_y < self.output.y or pointer_y > self.output.y + self.height(true)) {
                 return;
@@ -138,7 +131,7 @@ pub fn handle_click(self: *Self, seat: *Seat) void {
     };
 
     var x = utils.logical2physics(i32, pointer_x - self.output.x, self.scale);
-    if (config.bar.tags) |area| {
+    if (ctx.cfg.bar.tags) |area| {
         if (x <= self.static_component_width()) {
             for (0.., self.static_splits.items) |i, split| {
                 if (x <= split) {
@@ -160,7 +153,7 @@ pub fn handle_click(self: *Self, seat: *Seat) void {
 
     x -= self.static_component_width();
     inline for (0.., &[_]types.BarArea { .mode, .layout, .title }) |i, area_type| {
-        if (config.bar.get(area_type)) |area| {
+        if (ctx.cfg.bar.get(area_type)) |area| {
             if (x <= self.dynamic_splits.items[i]) {
                 action = area.click.getter.get(seat.button) orelse return;
                 return;
@@ -168,7 +161,7 @@ pub fn handle_click(self: *Self, seat: *Seat) void {
         }
     }
 
-    if (config.bar.status) |area| {
+    if (ctx.cfg.bar.status) |area| {
         if (x > self.dynamic_splits.getLast()) {
             action = area.click.getter.get(seat.button) orelse return;
         }
@@ -246,7 +239,6 @@ inline fn get_pad(self: *const Self) u16 {
 fn render_background(self: *Self) void {
     log.debug("<{*}> rendering background", .{ self });
 
-    const config = Config.get();
     const h = self.height(false);
     const logical_h = self.height(true);
 
@@ -256,14 +248,14 @@ fn render_background(self: *Self) void {
     } else {
         self.shell_surface.place(.bottom);
     }
-    self.shell_surface.set_position(self.output.x, self.output.y + switch (config.bar.position) {
+    self.shell_surface.set_position(self.output.x, self.output.y + switch (ctx.cfg.bar.position) {
         .top => 0,
         .bottom => self.output.height - logical_h,
     });
 
     const buffer = (
-        if (config.bar.empty()) blk: {
-            const rgba = utils.rgba(config.bar.scheme.normal.bg);
+        if (ctx.cfg.bar.empty()) blk: {
+            const rgba = utils.rgba(ctx.cfg.bar.scheme.normal.bg);
             break :blk ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(
                 rgba.r,
                 rgba.g,
@@ -338,8 +330,7 @@ fn render_static_component(self: *Self) void {
 
     self.static_splits.clearRetainingCapacity();
 
-    const config = Config.get();
-    const area = config.bar.tags orelse {
+    const area = ctx.cfg.bar.tags orelse {
         self.static_splits.append(ctx.gpa, 0) catch |err| {
             log.err("<{*}> append failed: {}", .{ self, err });
         };
@@ -392,7 +383,7 @@ fn render_static_component(self: *Self) void {
     const windows_tag: u32 = self.output.occupied_tags();
     const focused_window = ctx.focused_window();
 
-    const scheme = config.bar.get_scheme(.tags);
+    const scheme = ctx.cfg.bar.get_scheme(.tags);
     const select_fg = render_.utils.color(scheme.select.fg);
     const select_bg = render_.utils.color(scheme.select.bg);
     const normal_fg = render_.utils.color(scheme.normal.fg);
@@ -476,8 +467,6 @@ fn render_dynamic_component(self: *Self) void {
 
     self.dynamic_splits.clearRetainingCapacity();
 
-    const config = Config.get();
-
     const pad = self.get_pad();
     const w: u16 = @intCast(
         utils.logical2physics(i32, self.output.width, self.scale)-self.static_component_width()
@@ -498,11 +487,11 @@ fn render_dynamic_component(self: *Self) void {
     var x: i16 = 0;
     const y: i16 = 0;
 
-    if (config.bar.mode) |area| draw_mode: {
+    if (ctx.cfg.bar.mode) |area| draw_mode: {
         const tag = area.tag(ctx.mode) orelse ctx.mode;
         if (tag.len == 0) break :draw_mode;
 
-        const color = config.bar.get_scheme(.{ .mode = ctx.mode }).normal;
+        const color = ctx.cfg.bar.get_scheme(.{ .mode = ctx.mode }).normal;
         const fg = render_.utils.color(color.fg);
         const bg = render_.utils.color(color.bg);
 
@@ -521,7 +510,7 @@ fn render_dynamic_component(self: *Self) void {
     bg_rect[0].x = x;
     bg_rect[0].width = w - @as(u16, @intCast(x));
 
-    if (config.bar.layout) |area| draw_layout: {
+    if (ctx.cfg.bar.layout) |area| draw_layout: {
         var layout_tag_buffer: [32]u8 = undefined;
         const layout_tag = blk: {
             const tag = switch (self.output.current_layout()) {
@@ -561,7 +550,7 @@ fn render_dynamic_component(self: *Self) void {
         };
         if (layout_tag.len == 0) break :draw_layout;
 
-        const color = config.bar.get_scheme(.{ .layout = self.output.current_layout() }).normal;
+        const color = ctx.cfg.bar.get_scheme(.{ .layout = self.output.current_layout() }).normal;
         const fg = render_.utils.color(color.fg);
         const bg = render_.utils.color(color.bg);
 
@@ -581,8 +570,8 @@ fn render_dynamic_component(self: *Self) void {
     bg_rect[0].width = w - @as(u16, @intCast(x));
 
     const title_start = x;
-    if (config.bar.title) |_| draw_title: {
-        const scheme = config.bar.get_scheme(.title);
+    if (ctx.cfg.bar.title) |_| draw_title: {
+        const scheme = ctx.cfg.bar.get_scheme(.title);
         const normal_fg = render_.utils.color(scheme.normal.fg);
         const normal_bg = render_.utils.color(scheme.normal.bg);
         const select_fg = render_.utils.color(scheme.select.fg);
@@ -644,7 +633,7 @@ fn render_dynamic_component(self: *Self) void {
             y,
         ) + @as(i16, @intCast(pad));
     } else {
-        const bg = render_.utils.color(config.bar.scheme.normal.bg);
+        const bg = render_.utils.color(ctx.cfg.bar.scheme.normal.bg);
         _ = pixman.Image.fillRectangles(
             .src,
             buffer.image,
@@ -655,7 +644,7 @@ fn render_dynamic_component(self: *Self) void {
     }
     self.dynamic_splits.appendBounded(@intCast(w)) catch unreachable;
 
-    if (config.bar.status) |area| draw_status: {
+    if (ctx.cfg.bar.status) |area| draw_status: {
         const status_text: []const u8 = mem.trimEnd(
             u8,
             switch (area.data) {
@@ -666,7 +655,7 @@ fn render_dynamic_component(self: *Self) void {
         );
         if (status_text.len == 0) break :draw_status;
 
-        const color = config.bar.get_scheme(.status).normal;
+        const color = ctx.cfg.bar.get_scheme(.status).normal;
         const fg = render_.utils.color(color.fg);
         const bg = render_.utils.color(color.bg);
 
@@ -755,8 +744,6 @@ fn show(self: *Self) !void {
 
     log.debug("<{*}> show", .{ self });
 
-    const config = Config.get();
-
     const wl_surface = try ctx.wl_compositor.createSurface();
     errdefer wl_surface.destroy();
 
@@ -781,7 +768,7 @@ fn show(self: *Self) !void {
     wp_fractional_scale.setListener(*Self, wp_fractional_scale_listener, self);
     self.damage(.all);
 
-    if (config.bar.status) |area| {
+    if (ctx.cfg.bar.status) |area| {
         if (area.data != .text and !ctx.is_listening_status()) {
             ctx.start_listening_status();
         }

@@ -6,8 +6,6 @@ const time = std.time;
 const posix = std.posix;
 const log = std.log.scoped(.key_repeat);
 
-const Config = @import("config");
-
 const binding = @import("binding.zig");
 const Context = @import("context.zig");
 
@@ -44,8 +42,7 @@ pub fn prepare_repeat(self: *Self, xkb_binding: *binding.XkbBinding, action: bin
 
     log.debug("<{*}> start repeating {*}, action: {s}", .{ self, xkb_binding, @tagName(action) });
 
-    const config = Config.get();
-    const repeat_info = &config.bindings.repeat_info;
+    const repeat_info = &ctx.cfg.bindings.repeat_info;
 
     const itimerspec: posix.system.itimerspec = .{
         .it_value = .{ .sec = 0, .nsec = repeat_info.delay*time.ns_per_ms },
