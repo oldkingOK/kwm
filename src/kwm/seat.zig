@@ -24,6 +24,8 @@ const Window = @import("window.zig");
 const Context = @import("context.zig");
 const ShellSurface = @import("shell_surface.zig");
 
+const ctx = Context.get();
+
 
 link: wl.list.Link = undefined,
 
@@ -77,11 +79,9 @@ pub fn create(rwm_seat: *river.SeatV1) !*Self {
 
     defer log.debug("<{*}> created", .{ seat });
 
-    const context = Context.get();
-
-    const rwm_layer_shell_seat = try context.rwm_layer_shell.getSeat(rwm_seat);
+    const rwm_layer_shell_seat = try ctx.rwm_layer_shell.getSeat(rwm_seat);
     errdefer rwm_layer_shell_seat.destroy();
-    const rwm_xkb_binding_seat = try context.rwm_xkb_bindings.getSeat(rwm_seat);
+    const rwm_xkb_binding_seat = try ctx.rwm_xkb_bindings.getSeat(rwm_seat);
 
     seat.* = .{
         .rwm_seat = rwm_seat,
@@ -201,7 +201,6 @@ pub fn manage(self: *Self) void {
     defer self.pointer_position.new = false;
 
     const config = Config.get();
-    const context = Context.get();
 
     // TODO: https://codeberg.org/river/river/issues/1317
     // if config.sloppy_focus is true, once pointer activity, check window_below_pointer.new,
@@ -211,7 +210,7 @@ pub fn manage(self: *Self) void {
 
         const window = self.window_below_pointer.window.?;
 
-        context.focus(window, window.managed_by_layout());
+        ctx.focus(window, window.managed_by_layout());
     }
 
     self.handle_actions();
@@ -221,8 +220,8 @@ pub fn manage(self: *Self) void {
             log.debug("<{*}> exiting chorded", .{ self });
 
             // restore mode
-            self.toggle_bindings(context.mode, false);
-            context.switch_mode(self.mode.?);
+            self.toggle_bindings(ctx.mode, false);
+            ctx.switch_mode(self.mode.?);
 
             // reset self.mode, sync with context.mode later
             self.mode = null;
@@ -230,8 +229,8 @@ pub fn manage(self: *Self) void {
             self.chorded.state = .disabled;
         }
 
-        if (self.mode == null or !mem.eql(u8, self.mode.?, context.mode)) {
-            self.toggle_bindings(context.mode, true);
+        if (self.mode == null or !mem.eql(u8, self.mode.?, ctx.mode)) {
+            self.toggle_bindings(ctx.mode, true);
             if (self.mode) |mode| self.toggle_bindings(mode, false);
 
             if (self.chorded.state == .entering) {
@@ -239,7 +238,7 @@ pub fn manage(self: *Self) void {
 
                 self.chorded.state = .enabled;
             } else {
-                self.mode = fmt.bufPrint(&self.mode_buffer, "{s}", .{ context.mode }) catch unreachable;
+                self.mode = fmt.bufPrint(&self.mode_buffer, "{s}", .{ ctx.mode }) catch unreachable;
             }
         }
     }
@@ -258,9 +257,8 @@ pub fn try_focus(self: *Self) void {
     defer self.has_pointer_interaction = false;
 
     const config = Config.get();
-    const context = Context.get();
 
-    if (context.focused_window()) |window| focus_window: {
+    if (ctx.focused_window()) |window| focus_window: {
         if (window.geometry_undefined) break :focus_window;
 
         defer self.previous_focused = .{ .window = window };
@@ -297,7 +295,7 @@ pub fn try_focus(self: *Self) void {
             ) orelse window
         ).rwm_window);
     } else {
-        if (context.current_output) |output| {
+        if (ctx.current_output) |output| {
             defer self.previous_focused = .{ .output = output };
 
             if (!self.has_pointer_interaction and config.cursor_warp != .none) blk: {
@@ -507,7 +505,6 @@ fn handle_actions(self: *Self) void {
     defer self.unhandled_actions.clearRetainingCapacity();
 
     const config = Config.get();
-    const context = Context.get();
 
     var i: usize = 0;
     while (i < self.unhandled_actions.items.len) : (i += 1) {
@@ -515,22 +512,22 @@ fn handle_actions(self: *Self) void {
 
         switch (action) {
             .quit => |data| {
-                if (data.hook) |argv| context.register_quit_hook(argv, data.exit_session)
-                else context.quit(data.exit_session);
+                if (data.hook) |argv| ctx.register_quit_hook(argv, data.exit_session)
+                else ctx.quit(data.exit_session);
             },
             .close => {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.prepare_close();
                 }
             },
             .spawn => |data| {
-                context.spawn(data.argv);
+                ctx.spawn(data.argv);
             },
             .spawn_shell => |data| {
-                context.spawn_shell(data.cmd);
+                ctx.spawn_shell(data.cmd);
             },
             .move => |data| {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.ensure_floating();
                     switch (data.step) {
                         .horizontal => |offset| window.move(window.x+offset, null),
@@ -539,7 +536,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .resize => |data| {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.ensure_floating();
                     switch (data.step) {
                         .horizontal => |offset| {
@@ -576,7 +573,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .snap => |data| {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.ensure_floating();
                     window.snap_to(data.edge);
                 }
@@ -593,8 +590,8 @@ fn handle_actions(self: *Self) void {
                             continue;
                         },
                         .exiting => blk: {
-                            if (!mem.eql(u8, data.mode, context.mode)) {
-                                self.toggle_bindings(context.mode, false);
+                            if (!mem.eql(u8, data.mode, ctx.mode)) {
+                                self.toggle_bindings(ctx.mode, false);
                                 self.toggle_bindings(data.mode, true);
                             }
                             break :blk .enabled;
@@ -609,42 +606,42 @@ fn handle_actions(self: *Self) void {
                         ),
                     };
 
-                    context.switch_mode(data.mode);
+                    ctx.switch_mode(data.mode);
                 } else if (self.chorded.state == .disabled) {
-                    context.switch_mode(data.mode);
+                    ctx.switch_mode(data.mode);
                 } else {
                     self.mode = fmt.bufPrint(&self.mode_buffer, "{s}", .{ data.mode }) catch unreachable;
                 }
             },
             .focus_iter => |data| {
-                context.focus_iter(data.direction, data.skip);
+                ctx.focus_iter(data.direction, data.skip);
             },
             .focus_output_iter => |data| {
-                context.focus_output_iter(data.direction);
+                ctx.focus_output_iter(data.direction);
             },
             .send_to_output => |data| {
-                if (context.focused_window()) |window| {
-                    context.send_to_output(window, data.direction);
+                if (ctx.focused_window()) |window| {
+                    ctx.send_to_output(window, data.direction);
                 }
             },
             .swap => |data| {
-                context.swap(data.direction);
+                ctx.swap(data.direction);
             },
             .toggle_maximize => {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.toggle_maximize(null);
                 }
             },
             .toggle_fullscreen => |data| {
-                context.toggle_fullscreen(data.in_window);
+                ctx.toggle_fullscreen(data.in_window);
             },
             .set_output_tag => |data| {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     output.set_tag(data.tag.of(.{ .output = output }));
                 }
             },
             .set_window_tag => |data| {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     const new_tag = data.tag.of(.{ .window = window });
                     window.set_tag(new_tag);
                     if (data.focus_follow) {
@@ -655,55 +652,55 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .toggle_output_tag => |data| {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     output.toggle_tag(data.mask);
                 }
             },
             .toggle_window_tag => |data| {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.toggle_tag(data.mask);
                 }
             },
             .switch_to_previous_tag => {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     output.switch_to_previous_tag();
                 }
             },
             .toggle_floating => {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.toggle_floating(null);
                 }
             },
             .toggle_sticky => {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.toggle_sticky();
                 }
             },
             .toggle_swallow => {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     window.toggle_swallow();
                 }
             },
             .zoom => |data| {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     if (window.floating) continue;
 
                     if (window.output) |output| {
                         switch (output.current_layout()) {
                             .tile, .deck => {
                                 if (!data.swap) {
-                                    context.focus(window, true);
-                                    context.shift_to_head(window);
+                                    ctx.focus(window, true);
+                                    ctx.shift_to_head(window);
                                     continue;
                                 }
 
                                 var master = output.master_window() orelse continue;
                                 var new_master = if (window != master) window
-                                    else context.focused_before(window, true) orelse continue;
+                                    else ctx.focused_before(window, true) orelse continue;
 
                                 // ensure the old master immediately behind the new master in focus_stack
-                                context.focus(master, true);
-                                context.focus(new_master, true);
+                                ctx.focus(master, true);
+                                ctx.focus(new_master, true);
 
                                 // swap old master with new master
                                 master.link.swapWith(&new_master.link);
@@ -715,15 +712,15 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .focus_master_return => {
-                if (context.focused_window()) |window| {
+                if (ctx.focused_window()) |window| {
                     if (window.floating) continue;
                     if (window.output) |output| {
                         switch (output.current_layout()) {
                             .tile, .deck => {
                                 const master = output.master_window() orelse continue;
-                                context.focus(
+                                ctx.focus(
                                     if (window != master) master
-                                    else context.focused_before(window, true) orelse continue,
+                                    else ctx.focused_before(window, true) orelse continue,
                                     true,
                                 );
                             },
@@ -733,18 +730,18 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .switch_layout => |data| {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     output.set_current_layout(data.layout);
                 }
             },
             .switch_to_previous_layout => {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     output.switch_to_previous_layout();
                 }
             },
             .toggle_bar => {
                 if (comptime build_options.bar_enabled) {
-                    if (context.current_output) |output| {
+                    if (ctx.current_output) |output| {
                         output.bar.toggle();
                     }
                 } else {
@@ -753,7 +750,7 @@ fn handle_actions(self: *Self) void {
             },
 
             .modify_nmaster => |data| {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     switch (output.current_layout()) {
                         .tile => |tile| switch (data.change) {
                             .increase => tile.nmaster += 1,
@@ -768,7 +765,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .modify_mfact => |data| {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     switch (output.current_layout()) {
                         .tile => |tile| {
                             const mfact = switch (data.change) {
@@ -785,7 +782,7 @@ fn handle_actions(self: *Self) void {
                             deck.mfact = @min(1, @max(0, mfact));
                         },
                         .scroller => {
-                            if (context.focus_top_in(output, false)) |window| {
+                            if (ctx.focus_top_in(output, false)) |window| {
                                 const mfact = switch (data.change) {
                                     .set => |mfact| mfact,
                                     .step => |step| window.scroller_mfact + step,
@@ -798,7 +795,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .modify_gap => |data| {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     switch (output.current_layout()) {
                         .tile => |tile| tile.inner_gap = @max(config.border.width*2, tile.inner_gap+data.step),
                         .grid => |grid| grid.inner_gap = @max(config.border.width*2, grid.inner_gap+data.step),
@@ -810,7 +807,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .modify_master_location => |data| {
-                if (context.current_output) |output| blk: {
+                if (ctx.current_output) |output| blk: {
                     switch (output.current_layout()) {
                         .tile => |tile| tile.master_location = data.location,
                         .deck => |deck| deck.master_location = data.location,
@@ -822,7 +819,7 @@ fn handle_actions(self: *Self) void {
                 }
             },
             .toggle_grid_direction => {
-                if (context.current_output) |output| {
+                if (ctx.current_output) |output| {
                     switch (output.current_layout()) {
                         .grid => |grid| {
                             grid.direction = switch (grid.direction) {
@@ -842,7 +839,7 @@ fn handle_actions(self: *Self) void {
             },
 
             .reload_config => {
-                context.reload_config();
+                ctx.reload_config();
             },
 
             .group => |group| {
@@ -858,9 +855,7 @@ fn handle_actions(self: *Self) void {
 fn window_interaction(self: *Self, window: *Window) void {
     log.debug("<{*}> interaction with window {*}", .{ self, window });
 
-    const context = Context.get();
-
-    context.focus(window, true);
+    ctx.focus(window, true);
     self.has_pointer_interaction = true;
 }
 
@@ -868,21 +863,19 @@ fn window_interaction(self: *Self, window: *Window) void {
 fn shell_surface_interaction(self: *Self, shell_surface: *ShellSurface) void {
     log.debug("<{*}> interaction with shell surface: {*}", .{ self, shell_surface });
 
-    const context = Context.get();
-
     switch (shell_surface.type) {
         .layer_marker => unreachable,
         .bar => |bar| if (comptime build_options.bar_enabled) {
             log.debug("<{*}> interaction with {*}", .{ self, bar });
 
-            context.set_current_output(bar.output);
+            ctx.set_current_output(bar.output);
 
             bar.handle_click(self);
         } else unreachable,
         .background => |background| if (comptime build_options.background_enabled) {
             log.debug("<{*}> interaction with {*}", .{ self, background });
 
-            context.set_current_output(background.output);
+            ctx.set_current_output(background.output);
         } else unreachable,
     }
 
@@ -893,13 +886,11 @@ fn shell_surface_interaction(self: *Self, shell_surface: *ShellSurface) void {
 fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *Self) void {
     std.debug.assert(rwm_seat == seat.rwm_seat);
 
-    const context = Context.get();
-
     switch (event) {
         .op_delta => |data| {
             log.debug("<{*}> op delta: (dx: {}, dy: {})", .{ seat, data.dx, data.dy });
 
-            const window = context.focused_window().?;
+            const window = ctx.focused_window().?;
             switch (window.operator) {
                 .none => unreachable,
                 .move => |op_data| {
@@ -950,7 +941,7 @@ fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *
         .op_release => {
             log.debug("<{*}> op release", .{ seat });
 
-            if (context.focused_window()) |window| {
+            if (ctx.focused_window()) |window| {
                 switch (window.operator) {
                     .none => {},
                     .move => |data| {
@@ -1000,7 +991,7 @@ fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *
         .removed => {
             log.debug("<{*}> removed", .{ seat });
 
-            context.prepare_remove_seat(seat);
+            ctx.prepare_remove_seat(seat);
 
             seat.destroy();
         },
@@ -1026,7 +1017,7 @@ fn rwm_seat_listener(rwm_seat: *river.SeatV1, event: river.SeatV1.Event, seat: *
         .wl_seat => |data| {
             log.debug("<{*}> wl_seat: {}", .{ seat, data.name });
 
-            const wl_seat = context.wl_registry.bind(data.name, wl.Seat, 7) catch return;
+            const wl_seat = ctx.wl_registry.bind(data.name, wl.Seat, 7) catch return;
             seat.wl_seat = wl_seat;
             wl_seat.setListener(*Self, wl_seat_listener, seat);
         },
@@ -1076,7 +1067,6 @@ fn rwm_xkb_binding_seat_listener(rwm_xkb_binding_seat: *river.XkbBindingsSeatV1,
 fn wl_seat_listener(wl_seat: *wl.Seat, event: wl.Seat.Event, seat: *Self) void {
     std.debug.assert(wl_seat == seat.wl_seat);
 
-    const context = Context.get();
     switch (event) {
         .name => |data| {
             log.debug("<{*}> name: {s}", .{ seat, data.name });
@@ -1101,7 +1091,7 @@ fn wl_seat_listener(wl_seat: *wl.Seat, event: wl.Seat.Event, seat: *Self) void {
                 const wl_pointer = wl_seat.getPointer() catch return;
                 wl_pointer.setListener(*Self, wl_pointer_listener, seat);
                 seat.wl_pointer = wl_pointer;
-                seat.cursor_shape_device = context.wp_cursor_shape_manager.getPointer(wl_pointer) catch null;
+                seat.cursor_shape_device = ctx.wp_cursor_shape_manager.getPointer(wl_pointer) catch null;
             }
 
             // automatically run `kwim` when receive `capabilities` event
@@ -1110,7 +1100,7 @@ fn wl_seat_listener(wl_seat: *wl.Seat, event: wl.Seat.Event, seat: *Self) void {
                 const config_path = fs.cwd().realpathAlloc(utils.allocator, Config.path) catch null;
                 defer if (config_path) |ptr| utils.allocator.free(ptr);
 
-                _ = context.spawn(&.{
+                _ = ctx.spawn(&.{
                     "kwim",
                     "-c",
                     config_path orelse Config.path,

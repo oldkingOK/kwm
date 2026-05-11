@@ -60,6 +60,8 @@ const Event = union(enum) {
     resize: ResizeState,
 };
 
+const ctx = Context.get();
+
 
 link: wl.list.Link = undefined,
 flink: wl.list.Link = undefined,
@@ -175,10 +177,8 @@ pub fn create(rwm_window: *river.WindowV1, output: ?*Output) !*Self {
 pub fn destroy(self: *Self) void {
     defer log.debug("<{*}> destroyed", .{ self });
 
-    const context = Context.get();
-
     {
-        var it = context.seats.safeIterator(.forward);
+        var it = ctx.seats.safeIterator(.forward);
         while (it.next()) |seat| {
             switch (seat.previous_focused) {
                 .window => |window| if (self == window) {
@@ -196,7 +196,7 @@ pub fn destroy(self: *Self) void {
     self.set_former_output(null);
 
     if (self.is_terminal) {
-        context.unregister_terminal(self);
+        ctx.unregister_terminal(self);
     }
     self.unswallow();
 
@@ -567,7 +567,6 @@ pub fn handle_events(self: *Self) void {
     defer self.unhandled_events.clearRetainingCapacity();
 
     const config = Config.get();
-    const context = Context.get();
 
     for (self.unhandled_events.items) |event| {
         log.debug("<{*}> handle event: {s}", .{ self, @tagName(event) });
@@ -610,7 +609,7 @@ pub fn handle_events(self: *Self) void {
                 }
 
                 if (self.is_terminal) {
-                    context.register_terminal(self);
+                    ctx.register_terminal(self);
                 }
 
                 if (config.auto_swallow) {
@@ -931,7 +930,6 @@ fn append_event(self: *Self, event: Event) void {
 fn try_swallow(self: *Self) void {
     log.debug("<{*}> try swallow", .{ self });
 
-    const context = Context.get();
     if (!self.disable_swallow and self.pid != 0) {
         var pid = self.pid;
         var ppid: i32 = undefined;
@@ -939,7 +937,7 @@ fn try_swallow(self: *Self) void {
             ppid = utils.parent_pid(pid);
             if (ppid == 0 or ppid == 1) break;
 
-            if (context.find_terminal(ppid)) |term| {
+            if (ctx.find_terminal(ppid)) |term| {
                 self.swallow(term);
                 break;
             }
@@ -1019,12 +1017,10 @@ fn unswallow(self: *Self) void {
 
 
 fn apply_rule(self: *Self, rule: *const Config.WindowRule) void {
-    const context = Context.get();
-
     if (rule.tag) |tag| self.set_tag(tag);
     if (rule.output) |output_pattern| {
         {
-            var it = context.outputs.safeIterator(.forward);
+            var it = ctx.outputs.safeIterator(.forward);
             while (it.next()) |output| {
                 if (output_pattern.is_match(output.name)) {
                     self.set_output(output, true);
@@ -1042,8 +1038,8 @@ fn apply_rule(self: *Self, rule: *const Config.WindowRule) void {
     if (rule.attach_mode) |mode| {
         self.link.remove(); self.link.init();
         self.flink.remove(); self.flink.init();
-        context.attach_window(self, mode);
-        context.focus(self, true);
+        ctx.attach_window(self, mode);
+        ctx.focus(self, true);
     }
 }
 

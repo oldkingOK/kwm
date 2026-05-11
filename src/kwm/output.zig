@@ -29,6 +29,8 @@ pub const State = struct {
     prev_layout_tag: [32]Layout.Type,
 };
 
+const ctx = Context.get();
+
 
 link: wl.list.Link = undefined,
 
@@ -96,10 +98,8 @@ pub fn create(
 pub fn destroy(self: *Self) void {
     defer log.debug("<{*}> destroyed", .{ self });
 
-    const context = Context.get();
-
     {
-        var it = context.seats.safeIterator(.forward);
+        var it = ctx.seats.safeIterator(.forward);
         while (it.next()) |seat| {
             switch (seat.previous_focused) {
                 .output => |output| if (self == output) {
@@ -189,10 +189,8 @@ pub inline fn exclusive_height(self: *Self) i32 {
 
 
 pub fn fullscreen_window(self: *Self) ?*Window {
-    const context = Context.get();
-
     {
-        var it = context.windows.safeIterator(.forward);
+        var it = ctx.windows.safeIterator(.forward);
         while (it.next()) |window| {
             if (!window.is_visible_in(self)) continue;
 
@@ -212,10 +210,8 @@ pub fn fullscreen_window(self: *Self) ?*Window {
 
 
 pub fn master_window(self: *Self) ?*Window {
-    const context = Context.get();
-
     {
-        var it = context.windows.safeIterator(.forward);
+        var it = ctx.windows.safeIterator(.forward);
         while (it.next()) |window| {
             if (window.is_visible_in(self) and !window.floating) {
                 return window;
@@ -266,10 +262,9 @@ pub fn switch_to_previous_tag(self: *Self) void {
 
 
 pub fn occupied_tags(self: *const Self) u32 {
-    const context = Context.get();
     var mask: u32 = 0;
     {
-        var it = context.windows.safeIterator(.forward);
+        var it = ctx.windows.safeIterator(.forward);
         while (it.next()) |window| {
             if (window.output == self and window.swallowed_by == null) mask |= window.tag;
         }
@@ -410,17 +405,14 @@ fn rwm_output_listener(rwm_output: *river.OutputV1, event: river.OutputV1.Event,
         .removed => {
             log.debug("<{*}> removed, name: {s}", .{ output, output.name orelse "" });
 
-            const context = Context.get();
-
-            context.prepare_remove_output(output);
+            ctx.prepare_remove_output(output);
 
             output.destroy();
         },
         .wl_output => |data| {
             log.debug("<{*}> wl_output: {}", .{ output, data.name });
 
-            const context = Context.get();
-            const wl_output = context.wl_registry.bind(data.name, wl.Output, 4) catch return;
+            const wl_output = ctx.wl_registry.bind(data.name, wl.Output, 4) catch return;
             output.wl_output = wl_output;
             wl_output.setListener(*Self, wl_output_listener, output);
         },
@@ -458,7 +450,6 @@ fn rwm_layer_shell_output_listener(
 fn wl_output_listener(wl_output: *wl.Output, event: wl.Output.Event, output: *Self) void {
     std.debug.assert(wl_output == output.wl_output.?);
 
-    const context = Context.get();
     switch (event) {
         .geometry => |data| {
             log.debug(
@@ -481,17 +472,17 @@ fn wl_output_listener(wl_output: *wl.Output, event: wl.Output.Event, output: *Se
             const name = mem.span(data.name);
             output.set_name(name);
 
-            if (context.output_states.fetchRemove(name)) |kv| {
+            if (ctx.output_states.fetchRemove(name)) |kv| {
                 log.debug("<{*}> restore state: {any}", .{ output, kv.value });
                 output.sync_state(kv.value);
                 utils.allocator.free(kv.key);
                 utils.allocator.destroy(kv.value);
 
-                context.rwm.manageDirty();
+                ctx.rwm.manageDirty();
             }
 
             {
-                var it = context.windows.safeIterator(.forward);
+                var it = ctx.windows.safeIterator(.forward);
                 while (it.next()) |window| {
                     if (window.former_output) |former| {
                         if (mem.eql(u8, former, name)) {

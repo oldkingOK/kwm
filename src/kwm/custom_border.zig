@@ -15,6 +15,8 @@ const Context = @import("context.zig");
 const Window = @import("window.zig");
 const SolidColorComponent = @import("render/solid_color_component.zig");
 
+const ctx = Context.get();
+
 
 wl_surface: *wl.Surface,
 wp_viewport: *wp.Viewport,
@@ -34,12 +36,10 @@ damaged: bool = true,
 pub fn init(self: *Self, window: *Window) !void {
     log.debug("<{*}> init", .{ self });
 
-    const context = Context.get();
-
-    const wl_surface = try context.wl_compositor.createSurface();
+    const wl_surface = try ctx.wl_compositor.createSurface();
     errdefer wl_surface.destroy();
 
-    const wp_viewport = try context.wp_viewporter.getViewport(wl_surface);
+    const wp_viewport = try ctx.wp_viewporter.getViewport(wl_surface);
     errdefer wp_viewport.destroy();
 
     const rwm_decoration = try window.rwm_window.getDecorationBelow(wl_surface);
@@ -93,7 +93,6 @@ pub fn render(self: *Self, color: u32) void {
     log.debug("<{*}> rendering", .{ self });
 
     const config = Config.get();
-    const context = Context.get();
     const width, const height = blk: {
         if (self.window.maximize) {
             if (self.window.output) |output| {
@@ -118,7 +117,7 @@ pub fn render(self: *Self, color: u32) void {
     self.rwm_decoration.setOffset(-2*config.border.width, -2*config.border.width);
     self.rwm_decoration.syncNextCommit();
 
-    const buffer = context.wp_single_pixel_buffer_manager.createU32RgbaBuffer(0, 0, 0, 0) catch |err| {
+    const buffer = ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(0, 0, 0, 0) catch |err| {
         log.err("<{*}> create buffer failed: {}", .{ self, err });
         return;
     };

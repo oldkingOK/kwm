@@ -11,6 +11,8 @@ const Config = @import("config");
 const binding = @import("binding.zig");
 const Context = @import("context.zig");
 
+const ctx = Context.get();
+
 
 action: binding.Action = undefined,
 xkb_binding: ?*binding.XkbBinding = null,
@@ -64,13 +66,11 @@ pub fn repeat(self: *Self, count: u64) void {
 
     log.debug("<{*}> repeat, count: {}", .{ self, count });
 
-    const context = Context.get();
-
     for (0..count) |_| {
         self.xkb_binding.?.seat.append_action(self.action);
     }
 
-    context.rwm.manageDirty();
+    ctx.rwm.manageDirty();
 }
 
 

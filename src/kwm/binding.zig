@@ -3,7 +3,6 @@ const math = std.math;
 
 const types = @import("types.zig");
 const layout = @import("layout.zig");
-const Context = @import("context.zig");
 const Window = @import("window.zig");
 const Output = @import("output.zig");
 

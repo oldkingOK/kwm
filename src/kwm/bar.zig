@@ -26,6 +26,7 @@ const Seat = @import("seat.zig");
 const Output = @import("output.zig");
 const ShellSurface = @import("shell_surface.zig");
 
+const ctx = Context.get();
 const color_pattern = mvzr.compile("\\^#([0-9a-zA-Z]{8}|!)").?;
 pub var status_buffer = [1]u8 { 0 } ** 256;
 
@@ -246,7 +247,6 @@ fn render_background(self: *Self) void {
     log.debug("<{*}> rendering background", .{ self });
 
     const config = Config.get();
-    const context = Context.get();
     const h = self.height(false);
     const logical_h = self.height(true);
 
@@ -264,14 +264,14 @@ fn render_background(self: *Self) void {
     const buffer = (
         if (config.bar.empty()) blk: {
             const rgba = utils.rgba(config.bar.scheme.normal.bg);
-            break :blk context.wp_single_pixel_buffer_manager.createU32RgbaBuffer(
+            break :blk ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(
                 rgba.r,
                 rgba.g,
                 rgba.b,
                 rgba.a
             );
         }
-        else context.wp_single_pixel_buffer_manager.createU32RgbaBuffer(0, 0, 0, 0)
+        else ctx.wp_single_pixel_buffer_manager.createU32RgbaBuffer(0, 0, 0, 0)
     ) catch |err| {
         log.err("<{*}> create buffer failed: {}", .{ self, err });
         return;
@@ -339,7 +339,6 @@ fn render_static_component(self: *Self) void {
     self.static_splits.clearRetainingCapacity();
 
     const config = Config.get();
-    const context = Context.get();
     const area = config.bar.tags orelse {
         self.static_splits.append(utils.allocator, 0) catch |err| {
             log.err("<{*}> append failed: {}", .{ self, err });
@@ -391,7 +390,7 @@ fn render_static_component(self: *Self) void {
     const buffer = self.next_buffer(.static, w, h) orelse return;
 
     const windows_tag: u32 = self.output.occupied_tags();
-    const focused_window = context.focused_window();
+    const focused_window = ctx.focused_window();
 
     const scheme = config.bar.get_scheme(.tags);
     const select_fg = render_.utils.color(scheme.select.fg);
@@ -478,7 +477,6 @@ fn render_dynamic_component(self: *Self) void {
     self.dynamic_splits.clearRetainingCapacity();
 
     const config = Config.get();
-    const context = Context.get();
 
     const pad = self.get_pad();
     const w: u16 = @intCast(
@@ -501,10 +499,10 @@ fn render_dynamic_component(self: *Self) void {
     const y: i16 = 0;
 
     if (config.bar.mode) |area| draw_mode: {
-        const tag = area.tag(context.mode) orelse context.mode;
+        const tag = area.tag(ctx.mode) orelse ctx.mode;
         if (tag.len == 0) break :draw_mode;
 
-        const color = config.bar.get_scheme(.{ .mode = context.mode }).normal;
+        const color = config.bar.get_scheme(.{ .mode = ctx.mode }).normal;
         const fg = render_.utils.color(color.fg);
         const bg = render_.utils.color(color.bg);
 
@@ -539,7 +537,7 @@ fn render_dynamic_component(self: *Self) void {
 
             if (left < right) {
                 var num: usize = 0;
-                var it = context.windows.safeIterator(.forward);
+                var it = ctx.windows.safeIterator(.forward);
                 while (it.next()) |window| {
                     if (window.is_visible_in(self.output) and !window.floating) {
                         num += 1;
@@ -590,7 +588,7 @@ fn render_dynamic_component(self: *Self) void {
         const select_fg = render_.utils.color(scheme.select.fg);
         const select_bg = render_.utils.color(scheme.select.bg);
 
-        const top = context.focus_top_in(self.output, false);
+        const top = ctx.focus_top_in(self.output, false);
         if (top == null) {
             _ = pixman.Image.fillRectangles(
                 .src,
@@ -605,7 +603,7 @@ fn render_dynamic_component(self: *Self) void {
         const window = top.?;
         var fg: *const pixman.Color = undefined;
         var bg: *const pixman.Color = undefined;
-        if (self.output == context.current_output) {
+        if (self.output == ctx.current_output) {
             fg = &select_fg;
             bg = &select_bg;
         } else {
@@ -758,18 +756,17 @@ fn show(self: *Self) !void {
     log.debug("<{*}> show", .{ self });
 
     const config = Config.get();
-    const context = Context.get();
 
-    const wl_surface = try context.wl_compositor.createSurface();
+    const wl_surface = try ctx.wl_compositor.createSurface();
     errdefer wl_surface.destroy();
 
     try self.shell_surface.init(wl_surface, .{ .bar = self });
     errdefer self.shell_surface.deinit();
 
-    const wp_viewport = try context.wp_viewporter.getViewport(wl_surface);
+    const wp_viewport = try ctx.wp_viewporter.getViewport(wl_surface);
     errdefer wp_viewport.destroy();
 
-    const wp_fractional_scale = try context.wp_fractional_scale_manager.getFractionalScale(wl_surface);
+    const wp_fractional_scale = try ctx.wp_fractional_scale_manager.getFractionalScale(wl_surface);
     errdefer wp_fractional_scale.destroy();
 
     try self.static_component.init(wl_surface);
@@ -785,8 +782,8 @@ fn show(self: *Self) !void {
     self.damage(.all);
 
     if (config.bar.status) |area| {
-        if (area.data != .text and !context.is_listening_status()) {
-            context.start_listening_status();
+        if (area.data != .text and !ctx.is_listening_status()) {
+            ctx.start_listening_status();
         }
     }
 }

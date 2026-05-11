@@ -26,7 +26,8 @@ const Window = @import("window.zig");
 const KeyRepeat = @import("key_repeat.zig");
 const ShellSurface = @import("shell_surface.zig");
 
-var ctx: ?Self = null;
+var ctx: Self = undefined;
+var inited: bool = false;
 var mode_buffer: [16]u8 = undefined;
 
 
@@ -73,6 +74,11 @@ quit_hook: ?struct {
 } = null,
 
 
+pub inline fn check_init() void {
+    if (!inited) @panic("context has not been initialized yet");
+}
+
+
 pub fn init(
     wl_registry: *wl.Registry,
     wl_compositor: *wl.Compositor,
@@ -87,7 +93,7 @@ pub fn init(
     rwm_layer_shell: *river.LayerShellV1,
 ) !void {
     // initialize once
-    if (ctx != null) return;
+    if (inited) return;
 
     if (comptime build_options.bar_enabled) {
         _ = @import("fcft").init(.auto, false, .err);
@@ -119,27 +125,30 @@ pub fn init(
     defer wl_region.destroy();
     wl_surface.setInputRegion(wl_region);
     wl_surface.setOpaqueRegion(null);
-    try ctx.?.layer_marker.init(wl_surface, .layer_marker);
-    ctx.?.wl_surface = wl_surface;
+    try ctx.layer_marker.init(wl_surface, .layer_marker);
+    ctx.wl_surface = wl_surface;
     wl_surface.commit();
 
-    ctx.?.seats.init();
-    ctx.?.outputs.init();
-    ctx.?.windows.init();
-    ctx.?.focus_stack.init();
-    ctx.?.key_repeat.?.init() catch {
-        ctx.?.key_repeat = null;
+    ctx.seats.init();
+    ctx.outputs.init();
+    ctx.windows.init();
+    ctx.focus_stack.init();
+    ctx.key_repeat.?.init() catch {
+        ctx.key_repeat = null;
     };
 
-    ctx.?.init_env_map();
-    ctx.?.run_startup_cmds();
+    ctx.init_env_map();
+    ctx.run_startup_cmds();
 
-    rwm.setListener(*Self, rwm_listener, &ctx.?);
+    rwm.setListener(*Self, rwm_listener, &ctx);
+
+    inited = true;
 }
 
 
 pub fn deinit() void {
-    std.debug.assert(ctx != null);
+    std.debug.assert(inited);
+    defer inited = false;
 
     log.info("deinit context", .{});
 
@@ -147,78 +156,74 @@ pub fn deinit() void {
         @import("fcft").fini();
     }
 
-    defer ctx = null;
-
-    ctx.?.wl_registry.destroy();
-    ctx.?.wl_compositor.destroy();
-    ctx.?.wl_subcompositor.destroy();
-    ctx.?.wl_shm.destroy();
-    ctx.?.wp_viewporter.destroy();
-    ctx.?.wp_cursor_shape_manager.destroy();
-    ctx.?.wp_fractional_scale_manager.destroy();
-    ctx.?.wp_single_pixel_buffer_manager.destroy();
-    ctx.?.rwm.destroy();
-    ctx.?.rwm_xkb_bindings.destroy();
-    ctx.?.rwm_layer_shell.destroy();
-    ctx.?.layer_marker.deinit();
-    ctx.?.wl_surface.destroy();
+    ctx.wl_registry.destroy();
+    ctx.wl_compositor.destroy();
+    ctx.wl_subcompositor.destroy();
+    ctx.wl_shm.destroy();
+    ctx.wp_viewporter.destroy();
+    ctx.wp_cursor_shape_manager.destroy();
+    ctx.wp_fractional_scale_manager.destroy();
+    ctx.wp_single_pixel_buffer_manager.destroy();
+    ctx.rwm.destroy();
+    ctx.rwm_xkb_bindings.destroy();
+    ctx.rwm_layer_shell.destroy();
+    ctx.layer_marker.deinit();
+    ctx.wl_surface.destroy();
 
     // first destroy windows for it's destroy function may depends on others
     {
-        var it = ctx.?.windows.safeIterator(.forward);
+        var it = ctx.windows.safeIterator(.forward);
         while (it.next()) |window| {
             window.destroy();
         }
-        ctx.?.windows.init();
-        ctx.?.focus_stack.init();
+        ctx.windows.init();
+        ctx.focus_stack.init();
     }
 
     {
-        var it = ctx.?.seats.safeIterator(.forward);
+        var it = ctx.seats.safeIterator(.forward);
         while (it.next()) |seat| {
             seat.destroy();
         }
-        ctx.?.seats.init();
+        ctx.seats.init();
     }
-    ctx.?.current_seat = null;
+    ctx.current_seat = null;
 
     {
-        var it = ctx.?.outputs.safeIterator(.forward);
+        var it = ctx.outputs.safeIterator(.forward);
         while (it.next()) |output| {
             output.destroy();
         }
-        ctx.?.outputs.init();
+        ctx.outputs.init();
     }
-    ctx.?.current_output = null;
+    ctx.current_output = null;
 
-    if (ctx.?.key_repeat) |*key_repeat| key_repeat.deinit();
+    if (ctx.key_repeat) |*key_repeat| key_repeat.deinit();
 
-    if (ctx.?.is_listening_status()) {
-        ctx.?.stop_listening_status();
+    if (ctx.is_listening_status()) {
+        ctx.stop_listening_status();
     }
 
-    ctx.?.terminal_windows.deinit();
+    ctx.terminal_windows.deinit();
 
     {
-        var it = ctx.?.output_states.iterator();
+        var it = ctx.output_states.iterator();
         while (it.next()) |kv| {
             utils.allocator.free(kv.key_ptr.*);
             utils.allocator.destroy(kv.value_ptr.*);
         }
     }
-    ctx.?.output_states.deinit();
+    ctx.output_states.deinit();
 
-    ctx.?.env.deinit();
+    ctx.env.deinit();
 
-    ctx.?.kill_startup_process();
-    ctx.?.startup_processes.deinit(utils.allocator);
+    ctx.kill_startup_process();
+    ctx.startup_processes.deinit(utils.allocator);
 }
 
 
 pub inline fn get() *Self {
-    std.debug.assert(ctx != null);
-
-    return &ctx.?;
+    return &ctx;
 }
 
 
@@ -905,13 +910,13 @@ fn init_env_map(self: *Self) void {
 
     for (config.env) |pair| {
         const key, const value = pair;
-        ctx.?.env.put(key, value) catch |err| {
+        ctx.env.put(key, value) catch |err| {
             log.warn("put (key: {s}, value: {s}) to env map failed: {}", .{ key, value, err });
         };
     }
 
     if (config.xcursor_theme) |xcursor_theme| blk: {
-        ctx.?.env.put("XCURSOR_THEME", xcursor_theme.name) catch |err| {
+        ctx.env.put("XCURSOR_THEME", xcursor_theme.name) catch |err| {
             log.warn("put XCURSOR_THEME to `{s}` failed: {}", .{ xcursor_theme.name, err });
         };
 
@@ -920,7 +925,7 @@ fn init_env_map(self: *Self) void {
             log.warn("bufPrint failed: {}", .{ err });
             break :blk;
         };
-        ctx.?.env.put("XCURSOR_SIZE", xcursor_size) catch |err| {
+        ctx.env.put("XCURSOR_SIZE", xcursor_size) catch |err| {
             log.warn("put XCURSOR_SIZE to `{}` failed: {}", .{ xcursor_theme.size, err });
         };
     }
@@ -935,7 +940,7 @@ fn run_startup_cmds(self: *Self) void {
         return;
     };
     for (config.startup_cmds) |argv| {
-        ctx.?.startup_processes.appendBounded(self.spawn_child(argv)) catch unreachable;
+        ctx.startup_processes.appendBounded(self.spawn_child(argv)) catch unreachable;
     }
 }
 
