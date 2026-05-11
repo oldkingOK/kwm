@@ -337,7 +337,7 @@ pub fn start_listening_status(self: *Self) void {
 
                 break :blk posix.STDIN_FILENO;
             },
-            .fifo => |fifo| try_open_fifo(fifo, &self.env) catch null,
+            .fifo => |fifo| try_open_fifo(fifo) catch null,
         }
         else null;
 }
@@ -1222,8 +1222,8 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
 }
 
 
-fn try_open_fifo(fifo: []const u8, env: *const process.EnvMap) !posix.fd_t {
-    var expanded_fifo = try utils.expand_env_str(ctx.gpa, fifo, env);
+fn try_open_fifo(fifo: []const u8) !posix.fd_t {
+    var expanded_fifo = try utils.expand_env_str(ctx.gpa, fifo, &ctx.env);
     defer expanded_fifo.deinit(ctx.gpa);
 
     log.debug("try open fifo file `{s}`", .{ expanded_fifo.items });
