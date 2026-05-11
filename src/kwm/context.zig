@@ -31,6 +31,8 @@ var inited: bool = false;
 var mode_buffer: [16]u8 = undefined;
 
 
+gpa: mem.Allocator,
+
 wl_registry: *wl.Registry,
 wl_compositor: *wl.Compositor,
 wl_subcompositor: *wl.Subcompositor,
@@ -80,6 +82,7 @@ pub inline fn check_init() void {
 
 
 pub fn init(
+    gpa: mem.Allocator,
     wl_registry: *wl.Registry,
     wl_compositor: *wl.Compositor,
     wl_subcompositor: *wl.Subcompositor,
@@ -102,6 +105,7 @@ pub fn init(
     log.info("init context", .{});
 
     ctx = .{
+        .gpa = gpa,
         .wl_registry = wl_registry,
         .wl_compositor = wl_compositor,
         .wl_subcompositor = wl_subcompositor,
@@ -114,8 +118,8 @@ pub fn init(
         .rwm_xkb_bindings = rwm_xkb_bindings,
         .rwm_layer_shell = rwm_layer_shell,
         .key_repeat = undefined,
-        .terminal_windows = .init(utils.allocator),
-        .output_states = .init(utils.allocator),
+        .terminal_windows = .init(gpa),
+        .output_states = .init(gpa),
         .mode = fmt.bufPrint(&mode_buffer, "{s}", .{ Config.default_mode }) catch return error.ModeNameTooLong,
     };
 
@@ -209,8 +213,8 @@ pub fn deinit() void {
     {
         var it = ctx.output_states.iterator();
         while (it.next()) |kv| {
-            utils.allocator.free(kv.key_ptr.*);
-            utils.allocator.destroy(kv.value_ptr.*);
+            ctx.gpa.free(kv.key_ptr.*);
+            ctx.gpa.destroy(kv.value_ptr.*);
         }
     }
     ctx.output_states.deinit();
@@ -218,7 +222,7 @@ pub fn deinit() void {
     ctx.env.deinit();
 
     ctx.kill_startup_process();
-    ctx.startup_processes.deinit(utils.allocator);
+    ctx.startup_processes.deinit(ctx.gpa);
 }
 
 
@@ -815,14 +819,14 @@ pub inline fn set_current_seat(self: *Self, seat: ?*Seat) void {
 
 pub fn spawn_child(self: *Self, argv: []const []const u8) ?process.Child {
     if (comptime builtins.mode == .Debug) {
-        const cmd = mem.join(utils.allocator, " ", argv) catch unreachable;
-        defer utils.allocator.free(cmd);
+        const cmd = mem.join(self.gpa, " ", argv) catch unreachable;
+        defer self.gpa.free(cmd);
         log.debug("spawn child process: {s}", .{ cmd });
     }
 
     const config = Config.get();
 
-    var child = process.Child.init(argv, utils.allocator);
+    var child = process.Child.init(argv, self.gpa);
     child.env_map = &self.env;
     child.cwd = switch (config.working_directory) {
         .none => null,
@@ -839,8 +843,8 @@ pub fn spawn_child(self: *Self, argv: []const []const u8) ?process.Child {
 
 pub fn spawn(self: *Self, argv: []const []const u8) void {
     if (comptime builtins.mode == .Debug) {
-        const cmd = mem.join(utils.allocator, " ", argv) catch unreachable;
-        defer utils.allocator.free(cmd);
+        const cmd = mem.join(self.gpa, " ", argv) catch unreachable;
+        defer self.gpa.free(cmd);
         log.debug("spawn: `{s}`", .{ cmd });
     }
 
@@ -874,7 +878,7 @@ pub fn spawn(self: *Self, argv: []const []const u8) void {
             posix.chdir(dir) catch posix.exit(1);
         }
 
-        const err = process.execve(utils.allocator, argv, &self.env);
+        const err = process.execve(self.gpa, argv, &self.env);
         log.err("execve failed: {}", .{ err });
     }
 
@@ -889,11 +893,11 @@ pub inline fn spawn_shell(self: *Self, cmd: []const u8) void {
 
 inline fn store_output_state(self: *Self, output: *const Output) !void {
     if (output.name) |name| {
-        const state = try utils.allocator.create(Output.State);
-        errdefer utils.allocator.destroy(state);
+        const state = try self.gpa.create(Output.State);
+        errdefer self.gpa.destroy(state);
         state.* = output.get_state();
         try self.output_states.put(
-            try utils.allocator.dupe(u8, name),
+            try self.gpa.dupe(u8, name),
             state,
         );
     }
@@ -901,9 +905,9 @@ inline fn store_output_state(self: *Self, output: *const Output) !void {
 
 
 fn init_env_map(self: *Self) void {
-    self.env = process.getEnvMap(utils.allocator) catch |err| blk: {
+    self.env = process.getEnvMap(self.gpa) catch |err| blk: {
         log.warn("get EnvMap failed: {}", .{ err });
-        break :blk .init(utils.allocator);
+        break :blk .init(self.gpa);
     };
 
     const config = Config.get();
@@ -935,7 +939,7 @@ fn init_env_map(self: *Self) void {
 fn run_startup_cmds(self: *Self) void {
     const config = Config.get();
 
-    self.startup_processes.ensureTotalCapacity(utils.allocator, config.startup_cmds.len) catch |err| {
+    self.startup_processes.ensureTotalCapacity(self.gpa, config.startup_cmds.len) catch |err| {
         log.err("initCapacity for startup_processes failed: {}", .{ err });
         return;
     };
@@ -1216,8 +1220,8 @@ fn rwm_listener(rwm: *river.WindowManagerV1, event: river.WindowManagerV1.Event,
 
 
 fn try_open_fifo(fifo: []const u8, env: *const process.EnvMap) !posix.fd_t {
-    var expanded_fifo = try utils.expand_env_str(utils.allocator, fifo, env);
-    defer expanded_fifo.deinit(utils.allocator);
+    var expanded_fifo = try utils.expand_env_str(ctx.gpa, fifo, env);
+    defer expanded_fifo.deinit(ctx.gpa);
 
     log.debug("try open fifo file `{s}`", .{ expanded_fifo.items });
 

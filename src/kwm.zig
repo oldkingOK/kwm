@@ -32,7 +32,6 @@ pub const Button = types.Button;
 const ctx = Context.get();
 pub const init = Context.init;
 pub const deinit = Context.deinit;
-pub const init_allocator = utils.init_allocator;
 
 
 pub fn run(wl_display: *wl.Display) !void {

@@ -3,7 +3,6 @@ const Self = @This();
 const std = @import("std");
 const log = std.log.scoped(.grid);
 
-const utils = @import("../utils.zig");
 const Context = @import("../context.zig");
 const Output = @import("../output.zig");
 const Window = @import("../window.zig");
@@ -25,7 +24,7 @@ pub fn arrange(self: *const Self, output: *Output) !void {
     log.debug("<{*}> arrange windows in output {*}", .{ self, output });
 
     var windows: std.ArrayList(*Window) = .empty;
-    defer windows.deinit(utils.allocator);
+    defer windows.deinit(ctx.gpa);
     {
         var it = ctx.windows.safeIterator(.forward);
         while (it.next()) |window| {
@@ -33,7 +32,7 @@ pub fn arrange(self: *const Self, output: *Output) !void {
                 !window.is_visible_in(output)
                 or window.floating
             ) continue;
-            try windows.append(utils.allocator, window);
+            try windows.append(ctx.gpa, window);
         }
     }
 

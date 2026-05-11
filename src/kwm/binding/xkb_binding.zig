@@ -34,8 +34,8 @@ pub fn create(
     modifiers: river.SeatV1.Modifiers,
     event: Event,
 ) !*Self {
-    const xkb_binding = try utils.allocator.create(Self);
-    errdefer utils.allocator.destroy(xkb_binding);
+    const xkb_binding = try ctx.gpa.create(Self);
+    errdefer ctx.gpa.destroy(xkb_binding);
 
     defer log.debug("<{*}> created", .{ xkb_binding });
 
@@ -58,7 +58,7 @@ pub fn destroy(self: *Self) void {
 
     self.rwm_xkb_binding.destroy();
 
-    utils.allocator.destroy(self);
+    ctx.gpa.destroy(self);
 }
 
 

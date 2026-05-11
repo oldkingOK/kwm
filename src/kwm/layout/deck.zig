@@ -27,14 +27,14 @@ pub fn arrange(self: *const Self, output: *Output) !void {
 
     var windows = blk: {
         var windows: std.ArrayList(*Window) = .empty;
-        errdefer windows.deinit(utils.allocator);
+        errdefer windows.deinit(ctx.gpa);
 
         {
             var it = ctx.windows.safeIterator(.forward);
             while (windows.items.len < self.nmaster) {
                 const window = it.next() orelse break :blk windows;
                 if (!window.is_visible_in(output) or window.floating) continue;
-                try windows.append(utils.allocator, window);
+                try windows.append(ctx.gpa, window);
             }
         }
 
@@ -44,12 +44,12 @@ pub fn arrange(self: *const Self, output: *Output) !void {
                 const masters = windows.items[0..@intCast(self.nmaster)];
                 if (mem.containsAtLeastScalar(*Window, masters, 1, window)) continue;
                 if (!window.is_visible_in(output) or window.floating) continue;
-                try windows.append(utils.allocator, window);
+                try windows.append(ctx.gpa, window);
             }
         }
         break :blk windows;
     };
-    defer windows.deinit(utils.allocator);
+    defer windows.deinit(ctx.gpa);
 
     if (windows.items.len == 0) return;
 

@@ -96,8 +96,6 @@ pub fn main() !void {
     Config.init(&allocator, config_path);
     defer Config.deinit();
 
-    kwm.init_allocator(&allocator);
-
     const display = try wl.Display.connect(null);
     defer display.disconnect();
 
@@ -121,6 +119,7 @@ pub fn main() !void {
         const rwm_layer_shell = globals.rwm_layer_shell orelse return error.MissingRiverLayerShellV1;
 
         try kwm.init(
+            allocator,
             registry,
             wl_compositor,
             wl_subcompositor,

@@ -84,7 +84,7 @@ pub fn deinit(self: *Self) void {
     }
     self.font.deinit();
 
-    self.static_splits.deinit(utils.allocator);
+    self.static_splits.deinit(ctx.gpa);
 }
 
 
@@ -340,30 +340,30 @@ fn render_static_component(self: *Self) void {
 
     const config = Config.get();
     const area = config.bar.tags orelse {
-        self.static_splits.append(utils.allocator, 0) catch |err| {
+        self.static_splits.append(ctx.gpa, 0) catch |err| {
             log.err("<{*}> append failed: {}", .{ self, err });
         };
         return;
     };
 
-    self.static_splits.ensureTotalCapacity(utils.allocator, area.tags.len) catch |err| {
+    self.static_splits.ensureTotalCapacity(ctx.gpa, area.tags.len) catch |err| {
         log.err("<{*}> ensure static_splits total capacity to {} failed: {}", .{ self, area.tags.len, err });
         return;
     };
 
     var texts: std.ArrayList(*const fcft.TextRun) = .empty;
-    texts.ensureTotalCapacity(utils.allocator, area.tags.len) catch |err| {
+    texts.ensureTotalCapacity(ctx.gpa, area.tags.len) catch |err| {
         log.err("<{*}> initCapacity for texts while render_static_component failed: {}", .{ self, err });
         return;
     };
-    defer texts.deinit(utils.allocator);
+    defer texts.deinit(ctx.gpa);
 
     for (area.tags) |label| {
-        const utf8 = render_.utils.to_utf8(utils.allocator, label) catch |err| {
+        const utf8 = render_.utils.to_utf8(ctx.gpa, label) catch |err| {
             log.warn("<{*}> to_utf8 failed: {}", .{ self, err });
             return;
         };
-        defer utils.allocator.free(utf8);
+        defer ctx.gpa.free(utf8);
 
         texts.appendBounded(
             self.font.rasterize_text_run(utf8) orelse return
@@ -676,7 +676,7 @@ fn render_dynamic_component(self: *Self) void {
                 for (texts.items) |item| {
                     item[1].destroy();
                 }
-                texts.deinit(utils.allocator);
+                texts.deinit(ctx.gpa);
             }
 
             var i: usize = 0;
@@ -688,14 +688,14 @@ fn render_dynamic_component(self: *Self) void {
                     const end = if (match) |m| m.start else status_text.len;
                     defer i = end;
 
-                    const utf8 = render_.utils.to_utf8(utils.allocator, status_text[i..end]) catch |err| {
+                    const utf8 = render_.utils.to_utf8(ctx.gpa, status_text[i..end]) catch |err| {
                         log.warn("<{*}> to_utf8 failed: {}", .{ self, err });
                         break :status_block;
                     };
-                    defer utils.allocator.free(utf8);
+                    defer ctx.gpa.free(utf8);
 
                     texts.append(
-                        utils.allocator,
+                        ctx.gpa,
                         .{
                             c,
                             self.font.rasterize_text_run(utf8) orelse break :status_block

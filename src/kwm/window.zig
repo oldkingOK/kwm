@@ -142,8 +142,8 @@ operator: union(enum) {
 
 
 pub fn create(rwm_window: *river.WindowV1, output: ?*Output) !*Self {
-    const window = try utils.allocator.create(Self);
-    errdefer utils.allocator.destroy(window);
+    const window = try ctx.gpa.create(Self);
+    errdefer ctx.gpa.destroy(window);
 
     defer log.debug("<{*}> created", .{ window });
 
@@ -155,7 +155,7 @@ pub fn create(rwm_window: *river.WindowV1, output: ?*Output) !*Self {
     window.* = .{
         .rwm_window = rwm_window,
         .rwm_window_node = rwm_window_node,
-        .unhandled_events = try .initCapacity(utils.allocator, 2),
+        .unhandled_events = try .initCapacity(ctx.gpa, 2),
         .scroller_mfact =
             if (output) |o| o.scroller_mfact()
             else config.layout.scroller.mfact,
@@ -166,7 +166,7 @@ pub fn create(rwm_window: *river.WindowV1, output: ?*Output) !*Self {
         window.set_tag(o.tag);
         window.set_output(o, false);
     }
-    try window.unhandled_events.append(utils.allocator, .init);
+    try window.unhandled_events.append(ctx.gpa, .init);
 
     rwm_window.setListener(*Self, rwm_window_listener, window);
 
@@ -210,9 +210,9 @@ pub fn destroy(self: *Self) void {
     self.rwm_window_node.destroy();
     self.set_appid(null);
     self.set_title(null);
-    self.unhandled_events.deinit(utils.allocator);
+    self.unhandled_events.deinit(ctx.gpa);
 
-    utils.allocator.destroy(self);
+    ctx.gpa.destroy(self);
 }
 
 
@@ -243,12 +243,12 @@ pub fn set_former_output(self: *Self, output: ?[]const u8) void {
     log.debug("<{*}> set former output to `{s}`", .{ self, output orelse "" });
 
     if (self.former_output) |name| {
-        utils.allocator.free(name);
+        ctx.gpa.free(name);
         self.former_output = null;
     }
 
     if (output) |name| {
-        self.former_output = utils.allocator.dupe(u8, name) catch |err| {
+        self.former_output = ctx.gpa.dupe(u8, name) catch |err| {
             log.err("dupe {s} failed: {}", .{ name, err });
             return;
         };
@@ -889,22 +889,22 @@ pub fn hide(self: *Self) void {
 
 fn set_appid(self: *Self, app_id: ?[]const u8) void {
     if (self.app_id) |appid| {
-        utils.allocator.free(appid);
+        ctx.gpa.free(appid);
         self.app_id = null;
     }
     if (app_id) |appid| {
-        self.app_id = utils.allocator.dupe(u8, appid) catch return;
+        self.app_id = ctx.gpa.dupe(u8, appid) catch return;
     }
 }
 
 
 fn set_title(self: *Self, title: ?[]const u8) void {
     if (self.title) |tt| {
-        utils.allocator.free(tt);
+        ctx.gpa.free(tt);
         self.title = null;
     }
     if (title) |tt| {
-        self.title = utils.allocator.dupe(u8, tt) catch return;
+        self.title = ctx.gpa.dupe(u8, tt) catch return;
     }
 }
 
@@ -920,7 +920,7 @@ fn center(self: *Self) void {
 fn append_event(self: *Self, event: Event) void {
     log.debug("<{*}> append event: {s}", .{ self, @tagName(event) });
 
-    self.unhandled_events.append(utils.allocator, event) catch |err| {
+    self.unhandled_events.append(ctx.gpa, event) catch |err| {
         log.err("<{*}> append event {s} failed: {}", .{ self, @tagName(event), err });
         return;
     };

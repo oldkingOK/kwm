@@ -16,7 +16,6 @@ const river = wayland.client.river;
 
 const Config = @import("config");
 
-const utils = @import("utils.zig");
 const types = @import("types.zig");
 const binding = @import("binding.zig");
 const Output = @import("output.zig");
@@ -74,8 +73,8 @@ pointer_bindings: std.StringHashMap(std.ArrayList(*binding.PointerBinding)) = un
 
 
 pub fn create(rwm_seat: *river.SeatV1) !*Self {
-    const seat = try utils.allocator.create(Self);
-    errdefer utils.allocator.destroy(seat);
+    const seat = try ctx.gpa.create(Self);
+    errdefer ctx.gpa.destroy(seat);
 
     defer log.debug("<{*}> created", .{ seat });
 
@@ -87,9 +86,9 @@ pub fn create(rwm_seat: *river.SeatV1) !*Self {
         .rwm_seat = rwm_seat,
         .rwm_layer_shell_seat = rwm_layer_shell_seat,
         .rwm_xkb_binding_seat = rwm_xkb_binding_seat,
-        .unhandled_actions = try .initCapacity(utils.allocator, 2),
-        .xkb_bindings = .init(utils.allocator),
-        .pointer_bindings = .init(utils.allocator),
+        .unhandled_actions = try .initCapacity(ctx.gpa, 2),
+        .xkb_bindings = .init(ctx.gpa),
+        .pointer_bindings = .init(ctx.gpa),
     };
     seat.link.init();
 
@@ -118,9 +117,9 @@ pub fn destroy(self: *Self) void {
     self.xkb_bindings.deinit();
     self.pointer_bindings.deinit();
 
-    self.unhandled_actions.deinit(utils.allocator);
+    self.unhandled_actions.deinit(ctx.gpa);
 
-    utils.allocator.destroy(self);
+    ctx.gpa.destroy(self);
 }
 
 
@@ -319,7 +318,7 @@ pub fn try_focus(self: *Self) void {
 pub fn append_action(self: *Self, action: binding.Action) void {
     log.debug("<{*}> append action: {s}", .{ self, @tagName(action) });
 
-    self.unhandled_actions.append(utils.allocator, action) catch |err| {
+    self.unhandled_actions.append(ctx.gpa, action) catch |err| {
         log.err("<{*}> append action failed: {}", .{ self, err });
         return;
     };
@@ -358,7 +357,7 @@ pub fn create_bindings(self: *Self) void {
         const list = self.xkb_bindings.getPtr(mode).?;
 
         list.append(
-            utils.allocator,
+            ctx.gpa,
             binding.XkbBinding.create(
                 self,
                 keysym_from_name(key_binding.keysym) orelse {
@@ -404,7 +403,7 @@ pub fn create_bindings(self: *Self) void {
         const list = self.pointer_bindings.getPtr(mode).?;
 
         list.append(
-            utils.allocator,
+            ctx.gpa,
             binding.PointerBinding.create(
                 self,
                 @intFromEnum(pointer_binding.button),
@@ -447,7 +446,7 @@ pub fn clear_bindings(self: *Self) void {
             for (pair.value_ptr.items) |xkb_binding| {
                 xkb_binding.destroy();
             }
-            pair.value_ptr.deinit(utils.allocator);
+            pair.value_ptr.deinit(ctx.gpa);
         }
         self.xkb_bindings.clearRetainingCapacity();
     }
@@ -458,7 +457,7 @@ pub fn clear_bindings(self: *Self) void {
             for (pair.value_ptr.items) |pointer_binding| {
                 pointer_binding.destroy();
             }
-            pair.value_ptr.deinit(utils.allocator);
+            pair.value_ptr.deinit(ctx.gpa);
         }
         self.pointer_bindings.clearRetainingCapacity();
     }
@@ -1097,8 +1096,8 @@ fn wl_seat_listener(wl_seat: *wl.Seat, event: wl.Seat.Event, seat: *Self) void {
             // automatically run `kwim` when receive `capabilities` event
             // since if tty switched, the `capabilities` event will be resent
             if (comptime build_options.kwim_enabled) {
-                const config_path = fs.cwd().realpathAlloc(utils.allocator, Config.path) catch null;
-                defer if (config_path) |ptr| utils.allocator.free(ptr);
+                const config_path = fs.cwd().realpathAlloc(ctx.gpa, Config.path) catch null;
+                defer if (config_path) |ptr| ctx.gpa.free(ptr);
 
                 _ = ctx.spawn(&.{
                     "kwim",
@@ -1134,11 +1133,11 @@ fn wl_pointer_listener(wl_pointer: *wl.Pointer, event: wl.Pointer.Event, seat: *
 
 // https://codeberg.org/river/river-classic/src/commit/f0908e2d117ede7114fa85c65622b055c565c250/river/command/map.zig#L254
 fn keysym_from_name(name: []const u8) ?u32 {
-    const n = utils.allocator.dupeZ(u8, name) catch |err| {
+    const n = ctx.gpa.dupeZ(u8, name) catch |err| {
         log.err("dupeZ failed while call keysym_from_name: {}", .{ err });
         return null;
     };
-    defer utils.allocator.free(n);
+    defer ctx.gpa.free(n);
 
     const keysym = Keysym.fromName(n, .case_insensitive);
     if (keysym == .NoSymbol) {

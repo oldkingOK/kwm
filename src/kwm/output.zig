@@ -61,8 +61,8 @@ pub fn create(
     rwm_output: *river.OutputV1,
     rwm_layer_shell_output: ?*river.LayerShellOutputV1,
 ) !*Self {
-    const output = try utils.allocator.create(Self);
-    errdefer utils.allocator.destroy(output);
+    const output = try ctx.gpa.create(Self);
+    errdefer ctx.gpa.destroy(output);
 
     defer log.debug("<{*}> created", .{ output });
 
@@ -124,7 +124,7 @@ pub fn destroy(self: *Self) void {
 
     if (comptime build_options.bar_enabled) self.bar.deinit();
 
-    utils.allocator.destroy(self);
+    ctx.gpa.destroy(self);
 }
 
 
@@ -370,12 +370,12 @@ fn apply_rule(self: *Self, rule: *const Config.OutputRule) void {
 
 fn set_name(self: *Self, name: ?[]const u8) void {
     if (self.name) |name_| {
-        utils.allocator.free(name_);
+        ctx.gpa.free(name_);
         self.name = null;
     }
 
     if (name) |name_| {
-        self.name = utils.allocator.dupe(u8, name_) catch null;
+        self.name = ctx.gpa.dupe(u8, name_) catch null;
     }
 }
 
@@ -475,8 +475,8 @@ fn wl_output_listener(wl_output: *wl.Output, event: wl.Output.Event, output: *Se
             if (ctx.output_states.fetchRemove(name)) |kv| {
                 log.debug("<{*}> restore state: {any}", .{ output, kv.value });
                 output.sync_state(kv.value);
-                utils.allocator.free(kv.key);
-                utils.allocator.destroy(kv.value);
+                ctx.gpa.free(kv.key);
+                ctx.gpa.destroy(kv.value);
 
                 ctx.rwm.manageDirty();
             }

@@ -12,13 +12,7 @@ const wl = wayland.client.wl;
 
 const types = @import("types.zig");
 
-pub var allocator: std.mem.Allocator = undefined;
 const env_pattern = mvzr.compile("\\$\\{.*\\}").?;
-
-
-pub inline fn init_allocator(al: *const std.mem.Allocator) void {
-    allocator = al.*;
-}
 
 
 pub inline fn logical2physics(T: type, logical: T, scale: u32) T {
