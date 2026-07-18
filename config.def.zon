@@ -1122,6 +1122,7 @@
     //      disable_swallow: bool, if set true, the window could not swallow any other windows
     //      scroller_mfact: f32, initial mfact of the window for scroller layout
     //      attach_mode: like `default_attach_mode`, change attach_mode for window matched
+    //      opacity: f32 (0.0 to 1.0), window opacity where 0 is fully transparent and 1 is fully opaque
     .window_rules = .{
         .{ .app_id = .{ .str = "", .match_null = true }, .floating = true },
         .{ .app_id = .{ .str = "zenity" }, .floating = true },
@@ -1129,6 +1130,8 @@
         .{ .app_id = .{ .str = "xdg-desktop-portal-gtk" }, .floating = true },
         .{ .app_id = .{ .str = "chromium" }, .tag = 0b10, .scroller_mfact = 0.9 },
         .{ .app_id = .{ .str = "foot" }, .is_terminal = true, .scroller_mfact = 0.8 },
+        // Example: make all foot windows 85% opaque
+        // .{ .app_id = .{ .str = "foot" }, .opacity = 0.85 },
     },
 
     // output rules

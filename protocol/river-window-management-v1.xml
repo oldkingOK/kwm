@@ -1113,6 +1113,21 @@
       <arg name="max_width" type="int" summary="maximum width"/>
       <arg name="max_height" type="int" summary="maximum height"/>
     </request>
+
+    <request name="set_opacity" since="4">
+      <description summary="set the opacity of the window">
+        Set the opacity of the window, including borders and decoration surfaces.
+        The opacity value uses the fixed-point representation (24.8) and must be
+        in the range [0, 1], where 0 is fully transparent and 1 is fully opaque.
+
+        The default value is 1 (fully opaque). Setting this to a value less than
+        1 makes the window translucent.
+
+        This request modifies rendering state and may only be made as part of a
+        render sequence, see the river_window_manager_v1 description.
+      </description>
+      <arg name="opacity" type="fixed" summary="opacity value, range [0, 1]"/>
+    </request>
   </interface>
 
   <interface name="river_decoration_v1" version="4">

@@ -113,6 +113,7 @@ height: i32 = 0,
 min_width: i32 = 1,
 min_height: i32 = 1,
 scroller_mfact: f32 = undefined,
+opacity: f32 = 1.0,
 scroller_x: ?union(enum) {
     x: i32,
     center,
@@ -823,6 +824,8 @@ pub fn render(self: *Self) void {
         }
     }
 
+    self.rwm_window.setOpacity(wl.Fixed.fromDouble(@floatCast(self.opacity)));
+
     if (self.maximize) {
         log.debug("<{*}> rendering maximize", .{ self });
         offset_x += ctx.cfg.border.width;
@@ -1025,6 +1028,9 @@ fn apply_rule(self: *Self, rule: *const config.WindowRule) void {
         ctx.attach_window(self, mode);
         ctx.focus(self, true);
     }
+    if (rule.opacity) |opacity| {
+        self.opacity = @max(0.0, @min(1.0, opacity));
+    }
 }
 
 
@@ -1187,6 +1193,6 @@ fn rwm_window_listener(rwm_window: *river.WindowV1, event: river.WindowV1.Event,
         },
         .identifier => |data| {
             log.debug("<{*}> identifier: {s}", .{ window, data.identifier });
-        }
+        },
     }
 }
